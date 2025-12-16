@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Shortcut Helper",
+  "version": "1.0",
+  "description": "Create text shortcuts with emoji support",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.github.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
