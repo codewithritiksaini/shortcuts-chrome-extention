@@ -11,6 +11,7 @@ chrome.runtime.onInstalled.addListener(() => {
       enabled: false,
       repoUrl: '',
       token: '',
+      userEmail: '', // 🔥 Added userEmail field
       autoSync: false,
       lastSync: null
     }
@@ -45,17 +46,34 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
 async function performAutoSync(settings) {
   try {
     const result = await chrome.storage.sync.get(['shortcuts']);
-    const shortcuts = result.shortcuts || {};
+    const localShortcuts = result.shortcuts || {};
     
     const GitHubSync = await importGitHubSync();
-    const githubSync = new GitHubSync(settings.token, settings.repoUrl);
     
-    // Push current state to GitHub
-    await githubSync.push(shortcuts);
+    // 🔥 FIX: Pass userEmail parameter
+    const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
     
-    console.log('Auto-sync completed successfully');
+    // Use sync() for proper merge (instead of direct push)
+    const syncResult = await githubSync.sync(localShortcuts);
+    
+    if (syncResult.success) {
+      console.log('Auto-sync completed:', syncResult.action);
+      
+      // Update local storage if GitHub had newer data
+      if (syncResult.action === 'synced' || syncResult.action === 'no_changes') {
+        const currentResult = await chrome.storage.sync.get(['shortcuts']);
+        const currentShortcuts = currentResult.shortcuts || {};
+        
+        // Only update if data changed
+        if (JSON.stringify(currentShortcuts) !== JSON.stringify(syncResult.data)) {
+          await chrome.storage.sync.set({ shortcuts: syncResult.data });
+        }
+      }
+    } else {
+      console.error('Auto-sync failed:', syncResult.error);
+    }
   } catch (error) {
-    console.error('Auto-sync failed:', error);
+    console.error('Auto-sync error:', error);
   }
 }
 
@@ -76,34 +94,38 @@ async function performSync(settings) {
     const localShortcuts = localResult.shortcuts || {};
     
     const GitHubSync = await importGitHubSync();
-    // 🔥 UPDATE: Pass userEmail to constructor
+    // Pass userEmail to constructor
     const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
     
+    // Test connection first
     const connection = await githubSync.testConnection();
     if (!connection.success) {
       console.error('GitHub sync connection failed:', connection.error);
       return;
     }
     
+    // Perform sync
     const syncResult = await githubSync.sync(localShortcuts);
     
     if (syncResult.success) {
       const currentResult = await chrome.storage.sync.get(['shortcuts']);
       const currentShortcuts = currentResult.shortcuts || {};
       
+      // Only update if data changed
       if (JSON.stringify(currentShortcuts) !== JSON.stringify(syncResult.data)) {
         await chrome.storage.sync.set({ shortcuts: syncResult.data });
       }
       
+      // Update last sync time
       settings.lastSync = new Date().toISOString();
       await chrome.storage.sync.set({ syncSettings: settings });
       
-      console.log('Auto-sync completed successfully:', syncResult.action);
+      console.log('Sync completed:', syncResult.action);
     } else {
-      console.error('Auto-sync failed:', syncResult.error);
+      console.error('Sync failed:', syncResult.error);
     }
   } catch (error) {
-    console.error('Auto-sync error:', error);
+    console.error('Sync error:', error);
   }
 }
 
@@ -162,6 +184,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getSyncStatus') {
     chrome.storage.sync.get(['syncSettings'], (result) => {
       sendResponse({ settings: result.syncSettings || {} });
+    });
+    return true;
+  }
+  
+  // 🔥 NEW: Get GitHub file info
+  if (request.action === 'getGitHubInfo') {
+    chrome.storage.sync.get(['syncSettings'], async (result) => {
+      const settings = result.syncSettings || {};
+      if (settings.enabled && settings.token && settings.repoUrl) {
+        try {
+          const GitHubSync = await importGitHubSync();
+          const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
+          const fileInfo = await githubSync.getFileInfo();
+          sendResponse({ success: true, info: fileInfo });
+        } catch (error) {
+          sendResponse({ success: false, error: error.message });
+        }
+      } else {
+        sendResponse({ success: false, error: 'GitHub not connected' });
+      }
     });
     return true;
   }

@@ -45,24 +45,46 @@ class GitHubSync {
     return `${username}.json`;
   }
 
-  parseRepoUrl(url) {
-    if (!url) throw new Error('Repository URL is required');
-    
-    url = url.replace('.git', '').replace('https://', '');
-    
-    let match;
-    if (url.includes('github.com')) {
-      match = url.match(/github\.com[/:]([^/]+)\/([^/]+)/);
-    } else {
-      match = url.match(/([^/]+)\/([^/]+)/);
-    }
-    
-    if (!match) {
-      throw new Error('Invalid GitHub URL format. Expected: https://github.com/username/repo or username/repo');
-    }
-    
-    return { owner: match[1], repo: match[2] };
+parseRepoUrl(url) {
+  if (!url) throw new Error('Repository URL is required');
+  
+  // Trim whitespace
+  url = url.trim();
+  
+  // Pattern 1: SSH (git@github.com:owner/repo.git)
+  const sshPattern = /git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/;
+  let sshMatch = url.match(sshPattern);
+  if (sshMatch) {
+    return { owner: sshMatch[1], repo: sshMatch[2] };
   }
+  
+  // Pattern 2: HTTPS (https://github.com/owner/repo)
+  const httpsPattern = /https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/;
+  let httpsMatch = url.match(httpsPattern);
+  if (httpsMatch) {
+    return { owner: httpsMatch[1], repo: httpsMatch[2] };
+  }
+  
+  // Pattern 3: Short (owner/repo)
+  const shortPattern = /^([^/]+)\/([^/]+?)(?:\.git)?$/;
+  let shortMatch = url.match(shortPattern);
+  if (shortMatch) {
+    return { owner: shortMatch[1], repo: shortMatch[2] };
+  }
+  
+  // Pattern 4: Without protocol (github.com/owner/repo)
+  const noProtocolPattern = /github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/;
+  let noProtocolMatch = url.match(noProtocolPattern);
+  if (noProtocolMatch) {
+    return { owner: noProtocolMatch[1], repo: noProtocolMatch[2] };
+  }
+  
+  throw new Error(`Invalid GitHub URL. Supported formats:
+  1. HTTPS: https://github.com/username/repo
+  2. SSH: git@github.com:username/repo.git  
+  3. Short: username/repo
+  4. Without protocol: github.com/username/repo`);
+}
 
   // Test connection (SIMPLE - no directory creation)
   async testConnection() {
