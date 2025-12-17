@@ -762,20 +762,22 @@
       
       <div class="modal-body">
         <div class="form-group">
+          <label class="form-label">Your Email</label>
+          <input type="email" id="userEmail" class="form-input" 
+                placeholder="yourname@gmail.com">
+          <div class="form-hint">Used to identify your profile's shortcuts</div>
+        </div>
+        
+        <div class="form-group">
           <label class="form-label">Repository URL</label>
           <input type="text" id="repoUrl" class="form-input" 
                 placeholder="https://github.com/username/repo-name">
-          <div class="form-hint">Enter your private GitHub repository URL</div>
         </div>
         
         <div class="form-group">
           <label class="form-label">Access Token</label>
           <input type="password" id="githubToken" class="form-input" 
                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-          <div class="form-hint">
-            Create token at: GitHub → Settings → Developer settings → Personal access tokens<br>
-            Required permission: <code>repo</code>
-          </div>
         </div>
         
         <div class="form-group">

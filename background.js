@@ -72,35 +72,29 @@ async function checkAndSync() {
 // Perform the actual sync operation
 async function performSync(settings) {
   try {
-    // Get local shortcuts
     const localResult = await chrome.storage.sync.get(['shortcuts']);
     const localShortcuts = localResult.shortcuts || {};
     
-    // Initialize GitHub sync
     const GitHubSync = await importGitHubSync();
-    const githubSync = new GitHubSync(settings.token, settings.repoUrl);
+    // 🔥 UPDATE: Pass userEmail to constructor
+    const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
     
-    // Test connection first
     const connection = await githubSync.testConnection();
     if (!connection.success) {
       console.error('GitHub sync connection failed:', connection.error);
       return;
     }
     
-    // Perform sync
     const syncResult = await githubSync.sync(localShortcuts);
     
     if (syncResult.success) {
-      // Update local storage with merged data if different
       const currentResult = await chrome.storage.sync.get(['shortcuts']);
       const currentShortcuts = currentResult.shortcuts || {};
       
-      // Only update if data changed
       if (JSON.stringify(currentShortcuts) !== JSON.stringify(syncResult.data)) {
         await chrome.storage.sync.set({ shortcuts: syncResult.data });
       }
       
-      // Update last sync time
       settings.lastSync = new Date().toISOString();
       await chrome.storage.sync.set({ syncSettings: settings });
       

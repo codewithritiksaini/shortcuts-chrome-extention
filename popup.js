@@ -26,13 +26,19 @@ async function loadSyncSettings() {
   const result = await chrome.storage.sync.get(['shortcuts', 'syncSettings']);
   syncSettings = result.syncSettings || {};
   
+  // Load email field value if exists
+  if (syncSettings.userEmail) {
+    document.getElementById('userEmail').value = syncSettings.userEmail;
+  }
+  
   // Update UI based on sync settings
   updateGitHubUI();
   
-  // If connected to GitHub, initialize sync
+  // If connected to GitHub, initialize sync WITH EMAIL
   if (syncSettings.enabled && syncSettings.token && syncSettings.repoUrl) {
     try {
-      githubSync = new GitHubSync(syncSettings.token, syncSettings.repoUrl);
+      // 🔥 UPDATE: Pass userEmail to constructor
+      githubSync = new GitHubSync(syncSettings.token, syncSettings.repoUrl, syncSettings.userEmail);
       showStatus('Connected to GitHub', 'success');
     } catch (error) {
       showStatus('GitHub connection error: ' + error.message, 'error');
@@ -47,17 +53,18 @@ function updateGitHubUI() {
   const statusText = document.getElementById('syncStatusText');
   
   if (syncSettings.enabled) {
-    // Show sync section
     syncSection.style.display = 'block';
-    
-    // Update status
     statusDot.className = 'status-dot connected';
-    statusText.textContent = `Connected to ${syncSettings.repoUrl.split('/').slice(-1)[0]}`;
     
-    // Enable sync button
+    // 🔥 UPDATE: Show email in status
+    let statusMsg = `Connected to ${syncSettings.repoUrl.split('/').slice(-1)[0]}`;
+    if (syncSettings.userEmail) {
+      statusMsg += ` (${syncSettings.userEmail})`;
+    }
+    statusText.textContent = statusMsg;
+    
     document.getElementById('syncNowBtn').disabled = false;
   } else {
-    // Hide sync section
     syncSection.style.display = 'none';
     statusDot.className = 'status-dot';
     statusText.textContent = 'Not connected';
@@ -153,6 +160,7 @@ function closeGitHubModal() {
 async function saveGitHubSettings() {
   const repoUrl = document.getElementById('repoUrl').value.trim();
   const token = document.getElementById('githubToken').value.trim();
+  const userEmail = document.getElementById('userEmail').value.trim(); // 🔥 NEW
   const autoSync = document.getElementById('autoSync').checked;
   
   if (!repoUrl || !token) {
@@ -164,7 +172,8 @@ async function saveGitHubSettings() {
     // Test connection
     showStatus('Testing GitHub connection...', 'success');
     
-    const testSync = new GitHubSync(token, repoUrl);
+    // 🔥 UPDATE: Pass userEmail to constructor
+    const testSync = new GitHubSync(token, repoUrl, userEmail);
     const connection = await testSync.testConnection();
     
     if (!connection.success) {
@@ -172,18 +181,19 @@ async function saveGitHubSettings() {
       return;
     }
     
-    // Save settings
+    // Save settings with email
     syncSettings = {
       enabled: true,
       repoUrl: repoUrl,
       token: token,
+      userEmail: userEmail, // 🔥 NEW: Save email
       autoSync: autoSync,
       lastSync: null
     };
     
     await chrome.storage.sync.set({ syncSettings });
     
-    // Initialize GitHub sync
+    // Initialize GitHub sync with email
     githubSync = testSync;
     
     // Update UI
