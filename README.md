@@ -375,6 +375,8 @@ It helps more people discover this tool.
 
 ![Star History](https://api.star-history.com/svg?repos=codewithritiksaini/shortcuts-chrome-extention&type=Date)
 
+<br><br>
+
 ### 📢 Spread the Word
 
 Share **Shortcut Helper** with your friends and colleagues!
