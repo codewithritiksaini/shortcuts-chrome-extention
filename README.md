@@ -10,7 +10,7 @@
 </div>
 
 <div align="center">
-  <img src="https://via.placeholder.com/800x400/4361ee/ffffff?text=Shortcut+Helper+Demo" alt="Shortcut Helper Demo" width="600">
+  <img src="https://shortcut-helper.ritiksaini.in/image/extension.png" alt="Shortcut Helper Demo" width="600">
   
   **Type Less, Do More!** ✨
   
