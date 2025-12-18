@@ -366,7 +366,7 @@ This project is licensed under the MIT License — see the `LICENSE` file for de
 - 💡 **Feature Requests:** We'd love to hear your ideas!  
 - ⭐ **Like this project?** Star the repository!
 
-<div align="center">
+<div align="center"><br>
 
 ### ⭐ Star This Repository
 
@@ -375,7 +375,7 @@ It helps more people discover this tool.
 
 ![Star History](https://api.star-history.com/svg?repos=codewithritiksaini/shortcuts-chrome-extention&type=Date)
 
-<br><br>
+<br>
 
 ### 📢 Spread the Word
 
