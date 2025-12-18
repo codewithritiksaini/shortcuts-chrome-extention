@@ -383,9 +383,13 @@ Share **Shortcut Helper** with your friends and colleagues!
 
 <br>
 
+<div align="center">
+
 Check out **Shortcut Helper** – an amazing text expansion Chrome extension!  
 🔗 [GitHub Repository](https://github.com/codewithritiksaini/shortcuts-chrome-extention)  
 
 Happy Typing! 🚀✨  
 Save time, reduce repetitive strain, and boost your productivity with **Shortcut Helper**!
+
+</div>
 
