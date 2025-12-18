@@ -1,6 +1,6 @@
 # 🚀 Shortcut Helper - Text Expansion Chrome Extension
 
-<div style="text-align:center">
+<div align="center">
 
 [![GitHub License](https://img.shields.io/github/license/codewithritiksaini/shortcuts-chrome-extention)](https://github.com/codewithritiksaini/shortcuts-chrome-extention/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/codewithritiksaini/shortcuts-chrome-extention)](https://github.com/codewithritiksaini/shortcuts-chrome-extention/stargazers)
