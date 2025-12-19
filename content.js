@@ -81,7 +81,8 @@ class ShortcutManager {
           shortcutKey,
           count,
           position: this.getCaretPosition(target),
-          hasCount: true
+          hasCount: true,
+          fullText: this.generateText(shortcutKey, count)
         };
         this.showPreview(target, shortcutKey, count);
       }
@@ -95,11 +96,30 @@ class ShortcutManager {
           shortcutKey,
           count: 0, // No emojis needed
           position: this.getCaretPosition(target),
-          hasCount: false
+          hasCount: false,
+          fullText: this.generateText(shortcutKey, 0)
         };
         this.showPreview(target, shortcutKey, 0);
       }
     }
+  }
+
+  // Generate full text with emojis
+  generateText(shortcutKey, count) {
+    const shortcut = this.shortcuts[shortcutKey];
+    if (!shortcut) return '';
+    
+    let finalText = shortcut.text;
+    
+    // Only add emojis if count > 0 AND shortcut has emojis
+    if (shortcut.emojis && count > 0) {
+      const randomEmojis = this.getRandomEmojis(shortcut.emojis, count);
+      if (randomEmojis) {
+        finalText += ' ' + randomEmojis;
+      }
+    }
+    
+    return finalText;
   }
 
   handleKeydown(e) {
@@ -122,6 +142,37 @@ class ShortcutManager {
       return;
     }
     
+    // 🔥 NEW: COPY ON CTRL+C OR CMD+C (FOR MAC)
+    if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey) && this.previewElement && this.currentMatch) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Get the preview text
+      const previewText = this.previewElement.querySelector('.preview-text').textContent;
+      
+      // Copy to clipboard
+      this.copyToClipboard(previewText);
+      
+      // Show feedback on the button
+      const copyBtn = this.previewElement.querySelector('.copy-btn');
+      if (copyBtn) {
+        const originalHTML = copyBtn.innerHTML;
+        copyBtn.innerHTML = '✅ Copied!';
+        copyBtn.style.background = 'rgba(16, 185, 129, 0.3)';
+        copyBtn.style.borderColor = 'rgba(16, 185, 129, 0.6)';
+        
+        setTimeout(() => {
+          if (copyBtn && this.previewElement && document.body.contains(this.previewElement)) {
+            copyBtn.innerHTML = originalHTML;
+            copyBtn.style.background = 'rgba(255, 255, 255, 0.15)';
+            copyBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+          }
+        }, 1500);
+      }
+      
+      return;
+    }
+    
     // Hide preview when typing outside shortcut
     if (e.key !== ':' && !e.key.match(/[0-9]/) && e.key !== 'Backspace') {
       const value = this.getValue(e.target);
@@ -133,9 +184,11 @@ class ShortcutManager {
   }
 
   handleClick(e) {
-    // If click is on preview, replace text
+    // If click is on preview (but not on the copy button)
     if (e.target.closest('.shortcut-preview')) {
-      this.replaceShortcut();
+      if (!e.target.closest('.copy-btn')) {
+        this.replaceShortcut();
+      }
     }
     // If click is elsewhere, remove preview
     else if (this.previewElement && !this.previewElement.contains(e.target)) {
@@ -186,86 +239,259 @@ class ShortcutManager {
       }
     }
     
-    // Update hint text based on whether it has count or not
-    let hintText = '';
-    if (count > 0) {
-      hintText = `<span class="preview-count">${count} emoji${count !== 1 ? 's' : ''}</span>
-                  <span class="preview-hint">
-                    <span class="hint-action">Click</span> or press 
-                    <span class="hint-key">Tab</span> to insert • 
-                    <span class="hint-key">Esc</span> to cancel
-                  </span>`;
-    } else {
-      hintText = `<span class="preview-hint">
-                    <span class="hint-action">Click</span> or press 
-                    <span class="hint-key">Tab</span> to insert • 
-                    <span class="hint-key">Esc</span> to cancel
-                  </span>`;
-    }
-
     // Remove existing preview
     this.removePreview();
 
-    // Create preview element
+    // Create preview element with INLINE COPY BUTTON
     this.previewElement = document.createElement('div');
     this.previewElement.className = 'shortcut-preview';
     this.previewElement.innerHTML = `
       <div class="preview-content">
         <div class="preview-text">${previewText}</div>
-        <div class="preview-meta">
-          ${hintText}
+        <div class="preview-footer">
+          <div class="preview-hint">
+            Click or <kbd>Tab</kbd> to insert • 
+            <kbd>Ctrl+C</kbd> to copy 
+            <button class="copy-btn" title="Copy to clipboard">📋 Copy</button>
+          </div>
         </div>
       </div>
     `;
 
-    // Add click listener directly to the preview element
+    // Add click listener for the whole preview (auto-insert)
     this.previewElement.addEventListener('click', (e) => {
-      e.stopPropagation(); // Prevent the document click handler from removing it
-      this.replaceShortcut();
+      if (!e.target.closest('.copy-btn')) {
+        e.stopPropagation();
+        this.replaceShortcut();
+      }
     });
 
-    // Smart positioning
-    this.positionPreviewSmart(inputElement);
+    // Add click listener for COPY button
+    this.previewElement.querySelector('.copy-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.copyToClipboard(previewText);
+    });
+
+    // IMPROVED positioning - always above input
+    this.positionAboveInput(inputElement);
     
     document.body.appendChild(this.previewElement);
+    
+    // Add improved styles
+    this.addImprovedStyles();
     
     // Focus the input back so Tab key works
     inputElement.focus();
   }
 
-  // Smart positioning
-  positionPreviewSmart(inputElement) {
+  // Add improved styles with inline button
+  addImprovedStyles() {
+    if (document.getElementById('shortcut-improved-styles')) return;
+    
+    const style = document.createElement('style');
+    style.id = 'shortcut-improved-styles';
+    style.textContent = `
+      .shortcut-preview {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 14px;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        font-size: 14px;
+        cursor: pointer;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
+        animation: slideIn 0.2s ease-out;
+        max-width: 340px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      .shortcut-preview:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        border-color: rgba(255, 255, 255, 0.4);
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+      }
+      
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateY(-8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      .preview-content {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      
+      .preview-text {
+        font-size: 14px;
+        line-height: 1.4;
+        max-height: 100px;
+        overflow-y: auto;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      
+      .preview-text::-webkit-scrollbar {
+        width: 4px;
+      }
+      
+      .preview-text::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 2px;
+      }
+      
+      .preview-text::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+      }
+      
+      .preview-footer {
+        margin-top: 4px;
+      }
+      
+      .preview-hint {
+        font-size: 12px;
+        opacity: 0.9;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      
+      .preview-hint kbd {
+        display: inline-block;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        font-family: monospace;
+        font-weight: bold;
+        margin: 0 2px;
+        font-size: 11px;
+      }
+      
+      .copy-btn {
+        background: rgba(255, 255, 255, 0.15);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        backdrop-filter: blur(10px);
+        margin-left: 4px;
+        vertical-align: middle;
+        height: 24px;
+        line-height: 1;
+      }
+      
+      .copy-btn:hover {
+        background: rgba(255, 255, 255, 0.25);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+      
+      .copy-btn:active {
+        transform: translateY(0);
+      }
+    `;
+    
+    document.head.appendChild(style);
+  }
+
+  // Copy text to clipboard
+  async copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      
+      // Show success feedback
+      const copyBtn = this.previewElement.querySelector('.copy-btn');
+      const originalHTML = copyBtn.innerHTML;
+      copyBtn.innerHTML = '✅ Copied!';
+      copyBtn.style.background = 'rgba(16, 185, 129, 0.3)';
+      copyBtn.style.borderColor = 'rgba(16, 185, 129, 0.6)';
+      
+      // Revert after 1.5 seconds
+      setTimeout(() => {
+        if (copyBtn && this.previewElement && document.body.contains(this.previewElement)) {
+          copyBtn.innerHTML = originalHTML;
+          copyBtn.style.background = 'rgba(255, 255, 255, 0.15)';
+          copyBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+        }
+      }, 1500);
+      
+    } catch (error) {
+      console.error('Failed to copy:', error);
+      
+      // Show error feedback
+      const copyBtn = this.previewElement.querySelector('.copy-btn');
+      if (copyBtn) {
+        copyBtn.innerHTML = '❌ Error';
+        copyBtn.style.background = 'rgba(239, 68, 68, 0.3)';
+        copyBtn.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+        
+        setTimeout(() => {
+          if (copyBtn && this.previewElement && document.body.contains(this.previewElement)) {
+            copyBtn.innerHTML = '📋 Copy';
+            copyBtn.style.background = 'rgba(255, 255, 255, 0.15)';
+            copyBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+          }
+        }, 1500);
+      }
+    }
+  }
+
+  // IMPROVED: Always position above input
+  positionAboveInput(inputElement) {
     const rect = inputElement.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
     const scrollY = window.scrollY;
     const scrollX = window.scrollX;
     
-    // Default position below the input
-    let top = rect.bottom + scrollY + 5;
-    let left = rect.left + scrollX;
+    // Calculate preview height dynamically
+    const previewHeight = this.previewElement.offsetHeight || 140;
     
-    // Check if preview would go below screen
-    const previewHeight = 90; // Approximate height
-    const spaceBelow = viewportHeight - (rect.bottom - scrollY);
+    // Always position ABOVE the input
+    let top = rect.top + scrollY - previewHeight - 10; // 10px gap above
+    
+    // If not enough space above, position below
     const spaceAbove = rect.top - scrollY;
-    
-    // If not enough space below AND enough space above, show ABOVE
-    if (spaceBelow < previewHeight && spaceAbove > previewHeight) {
-      top = rect.top + scrollY - previewHeight - 5;
-    }
-    // If not enough space on either side, adjust to stay in viewport
-    else if (spaceBelow < previewHeight) {
-      top = scrollY + viewportHeight - previewHeight - 10;
+    if (spaceAbove < previewHeight + 20) {
+      top = rect.bottom + scrollY + 10; // 10px gap below
     }
     
-    // Make sure preview stays within viewport horizontally
-    const previewWidth = 350;
-    if (left + previewWidth > viewportWidth + scrollX) {
-      left = viewportWidth + scrollX - previewWidth - 10;
-    }
+    // Center horizontally relative to input
+    let left = rect.left + scrollX;
+    const previewWidth = 340;
+    const inputWidth = rect.width;
+    
+    // Center the preview relative to input
+    left = left + (inputWidth / 2) - (previewWidth / 2);
+    
+    // Make sure it doesn't go off screen
+    const viewportWidth = window.innerWidth;
     if (left < scrollX + 10) {
       left = scrollX + 10;
+    }
+    if (left + previewWidth > viewportWidth + scrollX - 10) {
+      left = viewportWidth + scrollX - previewWidth - 10;
     }
     
     this.previewElement.style.position = 'absolute';
@@ -286,7 +512,7 @@ class ShortcutManager {
   async replaceShortcut() {
     if (!this.currentMatch) return;
 
-    const { target, shortcutKey, count } = this.currentMatch;
+    const { target, shortcutKey, count, fullText } = this.currentMatch;
     const shortcut = this.shortcuts[shortcutKey];
     
     if (!shortcut) {
@@ -294,16 +520,8 @@ class ShortcutManager {
       return;
     }
 
-    // Generate final text
-    let finalText = shortcut.text;
-    
-    // Only add emojis if count > 0 AND shortcut has emojis
-    if (shortcut.emojis && count > 0) {
-      const randomEmojis = this.getRandomEmojis(shortcut.emojis, count);
-      if (randomEmojis) {
-        finalText += ' ' + randomEmojis;
-      }
-    }
+    // Use the pre-generated text
+    const finalText = fullText || this.generateText(shortcutKey, count);
 
     // Get current value and replace shortcut
     let currentValue = this.getValue(target);
