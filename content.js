@@ -142,37 +142,6 @@ class ShortcutManager {
       return;
     }
     
-    // 🔥 NEW: COPY ON CTRL+C OR CMD+C (FOR MAC)
-    if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey) && this.previewElement && this.currentMatch) {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      // Get the preview text
-      const previewText = this.previewElement.querySelector('.preview-text').textContent;
-      
-      // Copy to clipboard
-      this.copyToClipboard(previewText);
-      
-      // Show feedback on the button
-      const copyBtn = this.previewElement.querySelector('.copy-btn');
-      if (copyBtn) {
-        const originalHTML = copyBtn.innerHTML;
-        copyBtn.innerHTML = '✅ Copied!';
-        copyBtn.style.background = 'rgba(16, 185, 129, 0.3)';
-        copyBtn.style.borderColor = 'rgba(16, 185, 129, 0.6)';
-        
-        setTimeout(() => {
-          if (copyBtn && this.previewElement && document.body.contains(this.previewElement)) {
-            copyBtn.innerHTML = originalHTML;
-            copyBtn.style.background = 'rgba(255, 255, 255, 0.15)';
-            copyBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-          }
-        }, 1500);
-      }
-      
-      return;
-    }
-    
     // Hide preview when typing outside shortcut
     if (e.key !== ':' && !e.key.match(/[0-9]/) && e.key !== 'Backspace') {
       const value = this.getValue(e.target);
@@ -250,8 +219,7 @@ class ShortcutManager {
         <div class="preview-text">${previewText}</div>
         <div class="preview-footer">
           <div class="preview-hint">
-            Click or <kbd>Tab</kbd> to insert • 
-            <kbd>Ctrl+C</kbd> to copy 
+            Click or <kbd>Tab</kbd> to insert 
             <button class="copy-btn" title="Copy to clipboard">📋 Copy</button>
           </div>
         </div>
@@ -425,7 +393,7 @@ class ShortcutManager {
       // Show success feedback
       const copyBtn = this.previewElement.querySelector('.copy-btn');
       const originalHTML = copyBtn.innerHTML;
-      copyBtn.innerHTML = '✅ Copied!';
+      copyBtn.innerHTML = '✅ Copied';
       copyBtn.style.background = 'rgba(16, 185, 129, 0.3)';
       copyBtn.style.borderColor = 'rgba(16, 185, 129, 0.6)';
       
