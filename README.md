@@ -373,7 +373,13 @@ This project is licensed under the MIT License — see the `LICENSE` file for de
 If you find **Shortcut Helper** useful, please consider giving it a star on GitHub!  
 It helps more people discover this tool.
 
-![Star History](https://api.star-history.com/svg?repos=codewithritiksaini/shortcuts-chrome-extention&type=Date)
+<div align="center">
+
+### 📈 Real-time Statistics
+
+## ![GitHub Stats](https://github-star-history.ritiksaini.in/card.svg)
+
+</div>
 
 <br>
 
