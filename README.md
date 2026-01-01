@@ -377,7 +377,7 @@ It helps more people discover this tool.
 
 ### 📈 Real-time Statistics
 
-## ![GitHub Stats](https://github-star-history.ritiksaini.in/card.svg)
+## ![GitHub Stats](https://github-star-history.ritiksaini.in/card)
 
 </div>
 
