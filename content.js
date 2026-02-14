@@ -228,6 +228,8 @@ class ShortcutManager {
 
     // Add click listener for the whole preview (auto-insert)
     this.previewElement.addEventListener('click', (e) => {
+      // Use composedPath to find target across shadow boundary if needed, 
+      // but since listener is ON the key element, e.target should work fine within context
       if (!e.target.closest('.copy-btn')) {
         e.stopPropagation();
         this.replaceShortcut();
@@ -240,42 +242,73 @@ class ShortcutManager {
       this.copyToClipboard(previewText);
     });
 
-    // IMPROVED positioning - always above input
-    this.positionAboveInput(inputElement);
+    // IMPROVED: Use Shadow DOM
+    this.ensureShadowDom();
 
-    document.body.appendChild(this.previewElement);
-
-    // Add improved styles
+    // Add improved styles (inside shadow DOM)
     this.addImprovedStyles();
+
+    this.shadowRoot.appendChild(this.previewElement);
+
+    // Position it
+    this.positionAboveInput(inputElement);
 
     // Focus the input back so Tab key works
     inputElement.focus();
   }
 
+  ensureShadowDom() {
+    if (this.shadowHost) return;
+
+    // Create host element
+    this.shadowHost = document.createElement('div');
+    this.shadowHost.id = 'shortcut-helper-host';
+    // Reset all styles on host to prevent inheritance
+    this.shadowHost.style.all = 'initial';
+    this.shadowHost.style.position = 'absolute';
+    this.shadowHost.style.top = '0';
+    this.shadowHost.style.left = '0';
+    this.shadowHost.style.zIndex = '9999999999';
+    this.shadowHost.style.pointerEvents = 'none'; // Let clicks pass through helper host, but not its children
+
+    document.body.appendChild(this.shadowHost);
+
+    // Create shadow root
+    this.shadowRoot = this.shadowHost.attachShadow({ mode: 'open' });
+  }
+
   // Add improved styles with inline button
   addImprovedStyles() {
-    if (document.getElementById('shortcut-improved-styles')) return;
+    // Check if styles already exist in shadow root
+    if (this.shadowRoot.getElementById('shortcut-improved-styles')) return;
 
     const style = document.createElement('style');
     style.id = 'shortcut-improved-styles';
     style.textContent = `
+      :host {
+        all: initial;
+        font-family: sans-serif;
+      }
+
       .shortcut-preview {
-        background: #ffffff !important;
-        color: #1e293b !important;
-        padding: 16px !important;
-        border-radius: 16px !important;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
-        font-family: 'Outfit', -apple-system, sans-serif !important;
-        font-size: 14px !important;
-        cursor: pointer !important;
-        border: 1px solid #e2e8f0 !important;
-        animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        max-width: 340px !important;
+        background: #ffffff;
+        color: #1e293b;
+        padding: 16px;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        font-family: 'Outfit', -apple-system, sans-serif;
+        font-size: 14px;
+        cursor: pointer;
+        border: 1px solid #e2e8f0;
+        animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        max-width: 340px;
+        pointer-events: auto; /* Re-enable pointer events for the popup */
+        box-sizing: border-box;
       }
       
       .shortcut-preview:hover {
-        transform: translateY(-2px) !important;
-        border-color: #6366f1 !important;
+        transform: translateY(-2px);
+        border-color: #6366f1;
       }
       
       @keyframes slideIn {
@@ -290,15 +323,16 @@ class ShortcutManager {
       }
       
       .preview-text {
-        font-size: 14px !important;
-        line-height: 1.5 !important;
-        max-height: 120px !important;
-        overflow-y: auto !important;
-        padding: 12px !important;
-        background: #f8fafc !important;
-        border-radius: 10px !important;
-        border: 1px solid #f1f5f9 !important;
-        color: #334155 !important;
+        font-size: 14px;
+        line-height: 1.5;
+        max-height: 120px;
+        overflow-y: auto;
+        padding: 12px;
+        background: #f8fafc;
+        border-radius: 10px;
+        border: 1px solid #f1f5f9;
+        color: #334155;
+        box-sizing: border-box;
       }
       
       .preview-footer {
@@ -308,8 +342,8 @@ class ShortcutManager {
       }
       
       .preview-hint {
-        font-size: 12px !important;
-        color: #64748b !important;
+        font-size: 12px;
+        color: #64748b;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -317,35 +351,35 @@ class ShortcutManager {
       }
       
       .preview-hint kbd {
-        background: #f1f5f9 !important;
-        padding: 2px 6px !important;
-        border-radius: 6px !important;
-        border: 1px solid #e2e8f0 !important;
-        font-family: monospace !important;
-        font-weight: 700 !important;
-        color: #4f46e5 !important;
+        background: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+        font-family: monospace;
+        font-weight: 700;
+        color: #4f46e5;
       }
       
       .copy-btn {
-        background: #4f46e5 !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 6px 12px !important;
-        font-size: 11px !important;
-        font-weight: 600 !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease !important;
+        background: #4f46e5;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
       }
       
       .copy-btn:hover {
-        background: #3730a3 !important;
-        transform: translateY(-1px) !important;
-        box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2) !important;
+        background: #3730a3;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2);
       }
     `;
 
-    document.head.appendChild(style);
+    this.shadowRoot.appendChild(style);
   }
 
   // Copy text to clipboard
@@ -362,10 +396,11 @@ class ShortcutManager {
 
       // Revert after 1.5 seconds
       setTimeout(() => {
-        if (copyBtn && this.previewElement && document.body.contains(this.previewElement)) {
+        // Check if element still exists in shadow DOM
+        if (copyBtn && this.previewElement && this.shadowRoot.contains(this.previewElement)) {
           copyBtn.innerHTML = originalHTML;
-          copyBtn.style.background = 'rgba(255, 255, 255, 0.15)';
-          copyBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+          copyBtn.style.background = '';
+          copyBtn.style.borderColor = '';
         }
       }, 1500);
 
@@ -380,10 +415,10 @@ class ShortcutManager {
         copyBtn.style.borderColor = 'rgba(239, 68, 68, 0.6)';
 
         setTimeout(() => {
-          if (copyBtn && this.previewElement && document.body.contains(this.previewElement)) {
+          if (copyBtn && this.previewElement && this.shadowRoot.contains(this.previewElement)) {
             copyBtn.innerHTML = '📋 Copy';
-            copyBtn.style.background = 'rgba(255, 255, 255, 0.15)';
-            copyBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+            copyBtn.style.background = '';
+            copyBtn.style.borderColor = '';
           }
         }, 1500);
       }
@@ -397,7 +432,8 @@ class ShortcutManager {
     const scrollX = window.scrollX;
 
     // Calculate preview height dynamically
-    const previewHeight = this.previewElement.offsetHeight || 140;
+    // Note: Since it's in shadow DOM, we might need to wait for render or use fixed assumptions first
+    const previewHeight = this.previewElement.offsetHeight || 160;
 
     // Always position ABOVE the input
     let top = rect.top + scrollY - previewHeight - 10; // 10px gap above
@@ -425,6 +461,13 @@ class ShortcutManager {
       left = viewportWidth + scrollX - previewWidth - 10;
     }
 
+    // Important: Position relative to the document since shadow host is at 0,0 fixed/absolute
+    this.previewElement.style.position = 'fixed'; // Use fixed to be relative to viewport
+    // Adjust top/left for fixed positioning (subtract scroll) or use absolute if host is document-relative
+    // Better approach: Host is document.body child. 
+    // Let's make the preview absolute within the host.
+
+    // Recalculate for absolute positioning relative to document (since host is at 0,0 absolute)
     this.previewElement.style.position = 'absolute';
     this.previewElement.style.top = `${top}px`;
     this.previewElement.style.left = `${left}px`;

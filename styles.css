@@ -427,6 +427,13 @@ body {
   color: var(--text);
 }
 
+.modal-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  margin-top: 24px;
+}
+
 /* Sync Banner */
 .sync-banner {
   padding: 12px 16px;
