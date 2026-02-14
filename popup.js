@@ -159,6 +159,33 @@ function openGitHubSettings() {
   document.getElementById('githubModal').style.display = 'flex';
 }
 
+// About Modal Functions
+const aboutBtn = document.getElementById('aboutBtn');
+const aboutModal = document.getElementById('aboutModal');
+const closeAboutBtn = document.getElementById('closeAboutBtn');
+
+if (aboutBtn) {
+  aboutBtn.addEventListener('click', () => {
+    aboutModal.style.display = 'flex';
+  });
+}
+
+if (closeAboutBtn) {
+  closeAboutBtn.addEventListener('click', () => {
+    aboutModal.style.display = 'none';
+  });
+}
+
+// Close modals when clicking outside
+window.addEventListener('click', (e) => {
+  if (e.target === document.getElementById('githubModal')) {
+    closeGitHubModal();
+  }
+  if (e.target === aboutModal) {
+    aboutModal.style.display = 'none';
+  }
+});
+
 function closeGitHubModal() {
   document.getElementById('githubModal').style.display = 'none';
 }

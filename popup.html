@@ -14,6 +14,7 @@
     <div class="header-actions">
       <div class="version-tag">v2.0</div>
       <button id="githubSyncBtn" class="icon-btn-header" title="GitHub Sync Settings">🔗</button>
+      <button id="aboutBtn" class="icon-btn-header" title="About">ℹ️</button>
     </div>
   </div>
 
@@ -113,6 +114,62 @@
       <div class="modal-actions">
         <button id="cancelSync" class="btn btn-secondary">Cancel</button>
         <button id="saveSync" class="btn btn-primary">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- About Modal -->
+  <div id="aboutModal" class="modal-overlay" style="display: none;">
+    <div class="modal about-modal-container">
+      <div class="modal-header">
+        <h3>ℹ️ Info</h3>
+        <button id="closeAboutBtn" class="modal-close-icon" title="Close">×</button>
+      </div>
+      
+      <div class="about-content">
+        <!-- Extension Info First -->
+        <div class="extension-info-section">
+          <div class="app-logo-large">S</div>
+          <h2 class="app-name">Shortcut Helper</h2>
+          <p class="app-desc">Boost your productivity with custom text expansions.</p>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Creator Info Second -->
+        <div class="profile-section">
+          <!-- Removed Avatar as requested by User edits in previous turn -->
+          <div class="profile-info-row">
+            <span class="created-by-text">Created by</span>
+            <a href="https://ritiksaini.in" target="_blank" class="creator-link">
+              Ritik Saini
+            </a>
+          </div>
+        </div>
+        
+        <div class="about-links">
+          <a href="https://shortcut-helper.ritiksaini.in/" target="_blank" class="link-card">
+            <span class="link-icon">🌐</span>
+            <div class="link-details">
+              <span class="link-title">Website</span>
+              <span class="link-url">shortcut-helper.ritiksaini.in</span>
+            </div>
+            <span class="link-arrow">→</span>
+          </a>
+          
+          <a href="https://github.com/codewithritiksaini/shortcuts-chrome-extention" target="_blank" class="link-card">
+            <span class="link-icon">⭐</span>
+            <div class="link-details">
+              <span class="link-title">GitHub Repo</span>
+              <span class="link-url">View Source Code</span>
+            </div>
+            <span class="link-arrow">→</span>
+          </a>
+        </div>
+        
+        <div class="about-footer">
+          <p class="copyright">&copy; 2026 Ritik Saini. All rights reserved.</p>
+        </div>
       </div>
     </div>
   </div>
