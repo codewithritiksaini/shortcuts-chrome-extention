@@ -64,16 +64,65 @@ class ShortcutManager {
     // Clear any existing preview
     this.removePreview();
 
-    // FIXED: Check for BOTH patterns - with count AND without count
-    // Pattern 1: /shortcut:count (with emoji count)
+    // ===== STEP 1: Check for /cal: FIRST (highest priority) =====
+    if (value.includes('/cal:')) {
+      const calMatch = value.match(/\/cal:(.+)$/);
+      if (calMatch) {
+        const expression = calMatch[1];
+        // Only try to calculate if expression has content
+        if (expression.length > 0) {
+          const result = this.calculate(expression);
+          if (result !== null) {
+            // Valid complete expression - show result
+            this.currentMatch = {
+              target,
+              shortcutKey: '/cal',
+              count: 0,
+              position: this.getCaretPosition(target),
+              hasCount: false,
+              fullText: result.toString()
+            };
+            this.showPreview(target, '/cal', 0, expression + ' = ' + result);
+          } else {
+            // Incomplete expression (like "20*") - show typing indicator
+            this.currentMatch = {
+              target,
+              shortcutKey: '/cal',
+              count: 0,
+              position: this.getCaretPosition(target),
+              hasCount: false,
+              fullText: ''
+            };
+            this.showPreview(target, '/cal', 0, '🔢 ' + expression + ' = ...');
+          }
+        }
+        return; // Always stop here for /cal
+      }
+    }
+
+    // ===== STEP 2: /shortcut:count (e.g. /lorem:10) =====
     const matchWithCount = value.match(/\/([a-zA-Z0-9]+):(\d+)$/);
 
-    // Pattern 2: /shortcut (without count - for text only)
+    // ===== STEP 3: /shortcut (e.g. /hello) =====
     const matchWithoutCount = value.match(/\/([a-zA-Z0-9]+)$/);
 
     if (matchWithCount) {
-      const shortcutKey = `/${matchWithCount[1]}`;
+      const shortcutKey = '/' + matchWithCount[1];
       const count = parseInt(matchWithCount[2], 10);
+
+      if (shortcutKey === '/lorem') {
+        const loremText = this.generateLoremIpsum(count);
+        this.currentMatch = {
+          target,
+          shortcutKey,
+          count,
+          position: this.getCaretPosition(target),
+          hasCount: true,
+          fullText: loremText
+        };
+        this.showPreview(target, shortcutKey, count, loremText);
+        return;
+      }
 
       if (this.shortcuts[shortcutKey]) {
         this.currentMatch = {
@@ -88,13 +137,13 @@ class ShortcutManager {
       }
     }
     else if (matchWithoutCount) {
-      const shortcutKey = `/${matchWithoutCount[1]}`;
+      const shortcutKey = '/' + matchWithoutCount[1];
 
       if (this.shortcuts[shortcutKey]) {
         this.currentMatch = {
           target,
           shortcutKey,
-          count: 0, // No emojis needed
+          count: 0,
           position: this.getCaretPosition(target),
           hasCount: false,
           fullText: this.generateText(shortcutKey, 0)
@@ -102,6 +151,98 @@ class ShortcutManager {
         this.showPreview(target, shortcutKey, 0);
       }
     }
+  }
+
+  // Safe Calculator - uses recursive descent parser (no eval/new Function)
+  // CSP blocks eval/new Function in content scripts, so we parse manually
+  calculate(expression) {
+    try {
+      const sanitized = expression.replace(/[^0-9+\-*/%().\s]/g, '').trim();
+      if (!sanitized || sanitized.length === 0) return null;
+      if (!/[0-9]/.test(sanitized)) return null;
+
+      // Tokenize
+      const tokens = sanitized.match(/(\d+\.?\d*|[+\-*/%()])/g);
+      if (!tokens) return null;
+
+      let pos = 0;
+
+      const peek = () => tokens[pos];
+      const consume = () => tokens[pos++];
+
+      // Grammar: expr = term (('+' | '-') term)*
+      const parseExpr = () => {
+        let left = parseTerm();
+        while (peek() === '+' || peek() === '-') {
+          const op = consume();
+          const right = parseTerm();
+          left = op === '+' ? left + right : left - right;
+        }
+        return left;
+      };
+
+      // term = factor (('*' | '/' | '%') factor)*
+      const parseTerm = () => {
+        let left = parseFactor();
+        while (peek() === '*' || peek() === '/' || peek() === '%') {
+          const op = consume();
+          const right = parseFactor();
+          if (op === '*') left = left * right;
+          else if (op === '/') left = right !== 0 ? left / right : Infinity;
+          else left = left % right;
+        }
+        return left;
+      };
+
+      // factor = number | '(' expr ')' | '-' factor
+      const parseFactor = () => {
+        if (peek() === '(') {
+          consume(); // '('
+          const val = parseExpr();
+          if (peek() === ')') consume(); // ')'
+          return val;
+        }
+        if (peek() === '-') {
+          consume();
+          return -parseFactor();
+        }
+        const token = consume();
+        if (token === undefined) return NaN;
+        return parseFloat(token);
+      };
+
+      const result = parseExpr();
+
+      // Check we consumed all tokens
+      if (pos !== tokens.length) return null;
+
+      if (result === undefined || result === null) return null;
+      if (!isFinite(result) || isNaN(result)) return 'Error';
+
+      if (Number.isInteger(result)) {
+        return result;
+      } else {
+        return parseFloat(result.toFixed(4));
+      }
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Generate Lorem Ipsum words
+  generateLoremIpsum(count) {
+    if (count <= 0) return '';
+
+    const loremBase = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+
+    const words = loremBase.split(/\s+/);
+
+    let result = [];
+    while (result.length < count) {
+      result = result.concat(words);
+    }
+
+    return result.slice(0, count).join(' ');
   }
 
   // Generate full text with emojis
@@ -130,25 +271,53 @@ class ShortcutManager {
 
     // INSERT ON TAB KEY PRESS
     if (e.key === 'Tab' && this.previewElement && this.currentMatch) {
-      e.preventDefault(); // Prevent default tab behavior
+      e.preventDefault();
       this.replaceShortcut();
       return;
     }
 
-    // INSERT ON ENTER KEY PRESS (optional)
+    // INSERT ON ENTER KEY PRESS
     if (e.key === 'Enter' && this.previewElement && this.currentMatch) {
-      e.preventDefault(); // Prevent form submission
+      e.preventDefault();
       this.replaceShortcut();
       return;
     }
 
-    // Hide preview when typing outside shortcut
-    if (e.key !== ':' && !e.key.match(/[0-9]/) && e.key !== 'Backspace') {
+    // Allow calculator operator keys without hiding preview
+    const isCalculatorKey = /[+\-*/%().]/.test(e.key);
+
+    if (e.key !== ':' && !e.key.match(/[0-9]/) && e.key !== 'Backspace' && !isCalculatorKey) {
       const value = this.getValue(e.target);
-      // FIXED: Check for both patterns
-      if (!value.match(/\/[a-zA-Z0-9]+(:?\d*)$/)) {
+      const isShortcutPattern = value.match(/\/[a-zA-Z0-9]+(:?\d*)$/);
+      const isCalculatorPattern = value.match(/\/cal:.+$/);
+      if (!isShortcutPattern && !isCalculatorPattern) {
         this.removePreview();
       }
+    }
+
+    // For calculator operator keys, re-evaluate after key is inserted into input
+    if (isCalculatorKey) {
+      const target = e.target;
+      setTimeout(() => {
+        const value = this.getValue(target);
+        const calMatch = value.match(/\/cal:([0-9+\-*/%().\s]+)$/);
+        if (calMatch) {
+          const expression = calMatch[1].trim();
+          const result = this.calculate(expression);
+          if (result !== null) {
+            this.removePreview();
+            this.currentMatch = {
+              target,
+              shortcutKey: '/cal',
+              count: 0,
+              position: this.getCaretPosition(target),
+              hasCount: false,
+              fullText: result.toString()
+            };
+            this.showPreview(target, '/cal', 0, expression + ' = ' + result);
+          }
+        }
+      }, 0);
     }
   }
 
@@ -193,18 +362,26 @@ class ShortcutManager {
     return result;
   }
 
-  showPreview(inputElement, shortcutKey, count) {
-    const shortcut = this.shortcuts[shortcutKey];
-    if (!shortcut) return;
+  showPreview(inputElement, shortcutKey, count, directText = null) {
+    // If directText is provided (e.g. for lorem ipsum), use it. 
+    // Otherwise look up shortcut.
+    let previewText = '';
 
-    // Generate preview text
-    let previewText = shortcut.text;
+    if (directText) {
+      previewText = directText;
+    } else {
+      const shortcut = this.shortcuts[shortcutKey];
+      if (!shortcut) return;
 
-    // Only add emojis if count > 0 AND shortcut has emojis
-    if (shortcut.emojis && count > 0) {
-      const randomEmojis = this.getRandomEmojis(shortcut.emojis, count);
-      if (randomEmojis) {
-        previewText += ' ' + randomEmojis;
+      // Generate preview text from shortcut
+      previewText = shortcut.text;
+
+      // Only add emojis if count > 0 AND shortcut has emojis
+      if (shortcut.emojis && count > 0) {
+        const randomEmojis = this.getRandomEmojis(shortcut.emojis, count);
+        if (randomEmojis) {
+          previewText += ' ' + randomEmojis;
+        }
       }
     }
 
@@ -489,7 +666,8 @@ class ShortcutManager {
     const { target, shortcutKey, count, fullText } = this.currentMatch;
     const shortcut = this.shortcuts[shortcutKey];
 
-    if (!shortcut) {
+    // If it's a special command or valid shortcut
+    if (!shortcut && shortcutKey !== '/lorem' && shortcutKey !== '/cal') {
       this.removePreview();
       return;
     }
@@ -500,9 +678,13 @@ class ShortcutManager {
     // Get current value and replace shortcut
     let currentValue = this.getValue(target);
 
-    // FIXED: Handle both with and without count
+    // FIXED: Handle different patterns
     let shortcutPattern;
-    if (count > 0) {
+    if (shortcutKey === '/cal') {
+      const value = this.getValue(target);
+      const match = value.match(/\/cal:(.+)$/);
+      shortcutPattern = match ? match[0] : '/cal';
+    } else if (count > 0) {
       shortcutPattern = `${shortcutKey}:${count}`;
     } else {
       shortcutPattern = shortcutKey; // Just the shortcut without :count
