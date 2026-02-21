@@ -373,7 +373,7 @@ This project is licensed under the MIT License — see the `LICENSE` file for de
 If you find **Shortcut Helper** useful, please consider giving it a star on GitHub!  
 It helps more people discover this tool.
 
-![Star History]([https://github-star-history.ritiksaini.in/card](https://github-star-history.ritiksaini.in/card.svg))
+## ![GitHub Stats](https://github-star-history.ritiksaini.in/card)
 
 <br>
 
