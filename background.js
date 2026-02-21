@@ -226,3 +226,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
+// ===== PROGRAMMATIC INJECTION =====
+// Re-inject content.js into ALL frames when a tab finishes loading.
+// This is a failsafe for complex apps (Google Sheets, Office Online)
+// where declarative content_scripts injection may not reach all frames.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
+    injectContentScript(tabId);
+  }
+});
+
+// Also inject when user switches tabs (in case the page loaded before extension was ready)
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  injectContentScript(activeInfo.tabId);
+});
+
+async function injectContentScript(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId, allFrames: true },
+      files: ['content.js']
+    });
+  } catch (e) {
+    // Silently fail for restricted pages (chrome://, edge://, etc.)
+  }
+}
