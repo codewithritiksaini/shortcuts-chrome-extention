@@ -82,10 +82,8 @@
         // Debug: log every 10th poll to avoid flooding console
         this._pollDebugCounter++;
         if (this._pollDebugCounter % 10 === 0 && elements.size > 0) {
-          console.log('[ShortcutHelper] Polling: found', elements.size, 'editable targets');
           for (const el of elements) {
             const val = this.getValue(el);
-            if (val) console.log('[ShortcutHelper]   ->', el.tagName, el.id || el.className?.toString?.()?.substring(0, 30), '| value:', val.substring(0, 50));
           }
         }
 
@@ -98,7 +96,6 @@
           if (hasPattern && (value !== this._lastPolledValue || el !== this._lastPolledElement)) {
             this._lastPolledValue = value;
             this._lastPolledElement = el;
-            console.log('[ShortcutHelper] ✅ PATTERN DETECTED:', value, '| element:', el.tagName, el.id);
             this.handleInput({ target: el });
             break; // Only handle the first match
           }
@@ -332,7 +329,6 @@
         if (shortcutKey === '/lorem') {
           // Limit lorem to 1000 words max
           if (count > 1000) {
-            console.log('[ShortcutHelper] ❌ Lorem limit exceeded! Count:', count);
             this.currentMatch = {
               target,
               shortcutKey,
@@ -704,15 +700,12 @@
       // This bypasses all CSS stacking/overflow issues in complex apps
       if (document.body) {
         document.body.appendChild(this.previewElement);
-        console.log('[ShortcutHelper] ✅ Preview appended to body');
       } else {
-        console.log('[ShortcutHelper] ❌ No document.body available');
         return;
       }
 
       // Position it
       this.positionAboveInput(inputElement);
-      console.log('[ShortcutHelper] Preview positioned for element:', inputElement.tagName, inputElement.id);
 
       // Focus the input back so Tab key works
       inputElement.focus();
@@ -942,8 +935,6 @@
       this.previewElement.style.zIndex = '2147483647'; // Maximum z-index
       this.previewElement.style.maxWidth = `${previewWidth}px`;
       this.previewElement.style.pointerEvents = 'auto'; // Allow clicks on preview
-
-      console.log('[ShortcutHelper] Preview position: top=', this.previewElement.style.top, 'left=', this.previewElement.style.left);
     }
 
     removePreview() {
