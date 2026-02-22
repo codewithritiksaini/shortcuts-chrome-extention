@@ -1,0 +1,28 @@
+name: Deploy Extension
+
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+
+        steps:
+            # 1️⃣ Checkout repository
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            # 2️⃣ Deploy existing "extension" folder to Hostinger via SCP
+            - name: Deploy to Hostinger via SCP
+              uses: appleboy/scp-action@v0.1.7
+              with:
+                  host: ${{ secrets.HOST }}
+                  username: ${{ secrets.USERNAME }}
+                  key: ${{ secrets.SSH_KEY }}
+                  port: ${{ secrets.PORT }}
+                  source: "extension"
+                  target: ${{ secrets.PATH }}
+                  overwrite: true

@@ -1,4 +1,5 @@
 // Background service worker for Chrome extension
+importScripts('github-sync.js');
 
 // Initialize on install or update
 chrome.runtime.onInstalled.addListener(async () => {
@@ -55,45 +56,41 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
     if (settings.enabled && settings.autoSync) {
       // Wait 2 seconds to batch changes
       setTimeout(async () => {
-        await performAutoSync(settings);
+        try {
+          const result = await chrome.storage.local.get(['shortcuts']);
+          const localShortcuts = result.shortcuts || {};
+
+          // Now GitHubSync is globally available via importScripts
+          const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
+
+          // Use sync() for proper merge (instead of direct push)
+          const syncResult = await githubSync.sync(localShortcuts);
+
+          if (syncResult.success) {
+            console.log('Auto-sync completed:', syncResult.action);
+
+            // Update local storage if GitHub had newer data
+            if (syncResult.action === 'synced' || syncResult.action === 'no_changes') {
+              const currentResult = await chrome.storage.local.get(['shortcuts']);
+              const currentShortcuts = currentResult.shortcuts || {};
+
+              // Only update if data changed
+              if (JSON.stringify(currentShortcuts) !== JSON.stringify(syncResult.data)) {
+                await chrome.storage.local.set({ shortcuts: syncResult.data });
+              }
+            }
+          } else {
+            console.error('Auto-sync failed:', syncResult.error);
+          }
+        } catch (error) {
+          console.error('Auto-sync error:', error);
+        }
       }, 2000);
     }
   }
 });
 
-async function performAutoSync(settings) {
-  try {
-    const result = await chrome.storage.local.get(['shortcuts']);
-    const localShortcuts = result.shortcuts || {};
 
-    const GitHubSync = await importGitHubSync();
-
-    // 🔥 FIX: Pass userEmail parameter
-    const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
-
-    // Use sync() for proper merge (instead of direct push)
-    const syncResult = await githubSync.sync(localShortcuts);
-
-    if (syncResult.success) {
-      console.log('Auto-sync completed:', syncResult.action);
-
-      // Update local storage if GitHub had newer data
-      if (syncResult.action === 'synced' || syncResult.action === 'no_changes') {
-        const currentResult = await chrome.storage.local.get(['shortcuts']);
-        const currentShortcuts = currentResult.shortcuts || {};
-
-        // Only update if data changed
-        if (JSON.stringify(currentShortcuts) !== JSON.stringify(syncResult.data)) {
-          await chrome.storage.local.set({ shortcuts: syncResult.data });
-        }
-      }
-    } else {
-      console.error('Auto-sync failed:', syncResult.error);
-    }
-  } catch (error) {
-    console.error('Auto-sync error:', error);
-  }
-}
 
 // Check if sync is needed and perform it
 async function checkAndSync() {
@@ -111,8 +108,7 @@ async function performSync(settings) {
     const localResult = await chrome.storage.local.get(['shortcuts']);
     const localShortcuts = localResult.shortcuts || {};
 
-    const GitHubSync = await importGitHubSync();
-    // Pass userEmail to constructor
+    // Now GitHubSync is globally available via importScripts
     const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
 
     // Test connection first
@@ -147,34 +143,7 @@ async function performSync(settings) {
   }
 }
 
-// Dynamically import GitHubSync class
-async function importGitHubSync() {
-  // Since background.js is a service worker, we need to fetch and eval the module
-  try {
-    // Fetch the github-sync.js file
-    const response = await fetch(chrome.runtime.getURL('github-sync.js'));
-    const code = await response.text();
 
-    // Create a module-like environment
-    const module = { exports: {} };
-    const exports = {};
-
-    // Wrap the code in a function that sets module.exports
-    const wrappedCode = `
-      (function(module, exports) {
-        ${code}
-        return module.exports;
-      })
-    `;
-
-    // Evaluate the code
-    const GitHubSync = eval(wrappedCode)(module, exports);
-    return GitHubSync.default || GitHubSync;
-  } catch (error) {
-    console.error('Failed to load GitHubSync:', error);
-    throw error;
-  }
-}
 
 // Listen for messages from popup or content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -212,7 +181,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const settings = result.syncSettings || {};
       if (settings.enabled && settings.token && settings.repoUrl) {
         try {
-          const GitHubSync = await importGitHubSync();
+          // GitHubSync is globally available
           const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
           const fileInfo = await githubSync.getFileInfo();
           sendResponse({ success: true, info: fileInfo });
