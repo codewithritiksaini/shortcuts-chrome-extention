@@ -15,7 +15,18 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v4
 
-            # 2️⃣ Deploy existing "extension" folder to Hostinger via SCP
+            # 2️⃣ Delete old extension folder on server
+            - name: Delete old extension folder
+              uses: appleboy/ssh-action@v0.1.10
+              with:
+                  host: ${{ secrets.HOST }}
+                  username: ${{ secrets.USERNAME }}
+                  key: ${{ secrets.SSH_KEY }}
+                  port: ${{ secrets.PORT }}
+                  script: |
+                      rm -rf "${{ secrets.PATH }}extension"
+
+            # 3️⃣ Deploy existing "extension" folder to Hostinger via SCP
             - name: Deploy to Hostinger via SCP
               uses: appleboy/scp-action@v0.1.7
               with:
