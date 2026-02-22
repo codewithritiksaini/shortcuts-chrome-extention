@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shortcut Helper",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Smart text expansion with custom shortcuts, live calculator commands, and secure GitHub synchronization. Boost productivity across all web apps like Google Sheets with cloud backup.",
   "permissions": [
     "storage",
