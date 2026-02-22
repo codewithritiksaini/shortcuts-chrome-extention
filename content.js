@@ -514,15 +514,20 @@
         return;
       }
 
+      // Safety check for e.key
+      if (!e.key) return;
+
       // Allow calculator operator keys without hiding preview
       const isCalculatorKey = /[+\-*/%().]/.test(e.key);
 
       if (e.key !== ':' && !e.key.match(/[0-9]/) && e.key !== 'Backspace' && !isCalculatorKey) {
         const value = this.getValue(e.target);
-        const isShortcutPattern = value.match(/\/[a-zA-Z0-9]+(:?\d*)$/);
-        const isCalculatorPattern = value.match(/\/cal:.+$/);
-        if (!isShortcutPattern && !isCalculatorPattern) {
-          this.removePreview();
+        if (value) {
+          const isShortcutPattern = value.match(/\/[a-zA-Z0-9]+(:?\d*)$/);
+          const isCalculatorPattern = value.match(/\/cal:.+$/);
+          if (!isShortcutPattern && !isCalculatorPattern) {
+            this.removePreview();
+          }
         }
       }
 

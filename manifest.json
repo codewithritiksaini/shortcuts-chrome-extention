@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Shortcut Helper",
   "version": "1.0",
-  "description": "Create text shortcuts with emoji support",
+  "description": "Smart text expansion with custom shortcuts, live calculator commands, and secure GitHub synchronization. Boost productivity across all web apps like Google Sheets with cloud backup.",
   "permissions": [
     "storage",
     "activeTab",
@@ -41,5 +41,6 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "update_url": "https://shortcut-helper.ritiksaini.in/extension/updates/update.xml"
 }
