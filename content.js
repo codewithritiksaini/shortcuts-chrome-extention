@@ -17,7 +17,6 @@
     async init() {
       await this.loadShortcuts();
       this.setupEventListeners();
-      this.setupMutationObserver();
     }
 
     async loadShortcuts() {
@@ -33,26 +32,21 @@
         }
       });
 
-      // LAYER 1: Standard input events in capture phase
+      // LAYER 1: Standard input events in capture phase (catches all inputs dynamically)
       document.addEventListener('input', this.handleInput.bind(this), true);
       document.addEventListener('click', this.handleClick.bind(this));
       document.addEventListener('keydown', this.handleKeydown.bind(this), true);
       document.addEventListener('compositionend', this.handleInput.bind(this), true);
-      document.addEventListener('focusin', this.handleFocusIn.bind(this), true);
 
-      // LAYER 2: keyup in capture phase — MOST RELIABLE for complex apps
-      // keyup fires even when apps stopPropagation on input/keydown
+      // LAYER 2: keyup in capture phase — reliable for apps that stopPropagation on keydown
       document.addEventListener('keyup', (e) => {
-        // After key is released, check the active element for shortcut patterns
         const active = document.activeElement;
         if (active && this.isEditableElement(active)) {
-          // Create a synthetic event-like object pointing to the active element
           this.handleInput({ target: active });
         }
       }, true);
 
-      // LAYER 3: Polling fallback — checks every 300ms for shortcut patterns
-      // This is the ultimate brute-force approach for apps that block ALL events
+      // LAYER 3: Lightweight active-element polling fallback (only when tab is focused)
       this.startPolling();
     }
 
@@ -70,37 +64,28 @@
       return false;
     }
 
-    // Polling fallback: periodically check active element for shortcut patterns
+    // Lightweight polling fallback: checks active element only if tab is focused
     startPolling() {
       this._lastPolledValue = '';
       this._lastPolledElement = null;
-      this._pollDebugCounter = 0;
+
       setInterval(() => {
-        // Try multiple strategies to find the editable element
-        const elements = this.findAllEditableTargets();
+        // Skip entirely if document or tab is not focused
+        if (!document.hasFocus()) return;
 
-        // Debug: log every 10th poll to avoid flooding console
-        this._pollDebugCounter++;
-        if (this._pollDebugCounter % 10 === 0 && elements.size > 0) {
-          for (const el of elements) {
-            const val = this.getValue(el);
-          }
+        const active = this.getDeepActiveElement();
+        if (!active || !this.isEditableElement(active)) return;
+
+        const value = this.getValue(active);
+        if (!value) return;
+
+        const hasPattern = value.match(/\/[a-zA-Z0-9]+(:?\S*)$/) || value.includes('/cal:');
+        if (hasPattern && (value !== this._lastPolledValue || active !== this._lastPolledElement)) {
+          this._lastPolledValue = value;
+          this._lastPolledElement = active;
+          this.handleInput({ target: active });
         }
-
-        for (const el of elements) {
-          const value = this.getValue(el);
-          if (!value) continue;
-
-          // Check if value contains any shortcut patterns
-          const hasPattern = value.match(/\/[a-zA-Z0-9]+(:?\S*)$/) || value.includes('/cal:');
-          if (hasPattern && (value !== this._lastPolledValue || el !== this._lastPolledElement)) {
-            this._lastPolledValue = value;
-            this._lastPolledElement = el;
-            this.handleInput({ target: el });
-            break; // Only handle the first match
-          }
-        }
-      }, 300);
+      }, 800);
     }
 
     // Get the deeply-nested active element (traversing iframes and shadow DOMs)
@@ -128,135 +113,6 @@
         break;
       }
       return el;
-    }
-
-    // Find all possible editable targets across the page
-    findAllEditableTargets() {
-      const targets = new Set();
-
-      // Strategy 1: Deep active element
-      const deepActive = this.getDeepActiveElement();
-      if (deepActive && this.isEditableElement(deepActive)) {
-        targets.add(deepActive);
-      }
-
-      // Strategy 2: Standard activeElement
-      const active = document.activeElement;
-      if (active && this.isEditableElement(active)) {
-        targets.add(active);
-      }
-
-      // Strategy 3: Directly query for known editor elements (Google Sheets/Docs, Office)
-      const knownSelectors = [
-        '#waffle-rich-text-editor',        // Google Sheets cell editor
-        '.cell-input',                      // Google Sheets formula bar
-        '.docs-texteventtarget-iframe',     // Google Docs text event target
-        '[role="textbox"][contenteditable]', // Generic rich text editors
-        '[role="combobox"][contenteditable]',// Google Sheets combobox editor
-        '.notranslate[contenteditable]',    // Many rich text editors
-        '[data-placeholder][contenteditable]', // Slate.js editors
-        '.ql-editor',                       // Quill editors
-        '.ProseMirror',                     // ProseMirror editors  
-        '.tox-edit-area__iframe',           // TinyMCE editors
-        '.cke_editable',                    // CKEditor
-      ];
-
-      for (const selector of knownSelectors) {
-        try {
-          const els = document.querySelectorAll(selector);
-          els.forEach(el => {
-            if (el.tagName === 'IFRAME') {
-              // Try to get the editable element inside the iframe
-              try {
-                const iframeDoc = el.contentDocument || el.contentWindow?.document;
-                if (iframeDoc) {
-                  const iframeEditable = iframeDoc.querySelector('[contenteditable]') ||
-                    iframeDoc.querySelector('textarea') ||
-                    iframeDoc.querySelector('body');
-                  if (iframeEditable) targets.add(iframeEditable);
-                }
-              } catch (e) { /* cross-origin */ }
-            } else {
-              targets.add(el);
-            }
-          });
-        } catch (e) { /* invalid selector */ }
-      }
-
-      // Strategy 4: Check all iframes for editable content
-      try {
-        const iframes = document.querySelectorAll('iframe');
-        iframes.forEach(iframe => {
-          try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (iframeDoc) {
-              const iframeActive = iframeDoc.activeElement;
-              if (iframeActive && this.isEditableElement(iframeActive)) {
-                targets.add(iframeActive);
-              }
-            }
-          } catch (e) { /* cross-origin */ }
-        });
-      } catch (e) { }
-
-      return targets;
-    }
-
-    setupMutationObserver() {
-      // Observe DOM changes for dynamically loaded content (like in Gmail, WhatsApp Web)
-      const observer = new MutationObserver(() => {
-        this.attachToInputs();
-      });
-
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-    }
-
-    attachToInputs() {
-      // Broad selector to catch standard inputs, textareas, and all contenteditable variants
-      // Also catches role="textbox" (used by many web apps) and Google Sheets' cell editor
-      const inputs = document.querySelectorAll(
-        'input[type="text"], input:not([type]), textarea, ' +
-        '[contenteditable="true"], [contenteditable="plaintext-only"], [contenteditable=""], ' +
-        '[role="textbox"], [role="combobox"], [role="searchbox"], ' +
-        '.cell-input, .docs-texteventtarget-iframe, ' +
-        '[data-sheets-value], [aria-label*="cell"], ' +
-        '.waffle-cell-editor'
-      );
-      inputs.forEach(input => {
-        if (!input.dataset.shortcutListener) {
-          input.addEventListener('input', this.handleInput.bind(this));
-          input.addEventListener('keydown', this.handleKeydown.bind(this));
-          input.addEventListener('compositionend', this.handleInput.bind(this));
-          input.dataset.shortcutListener = 'true';
-        }
-      });
-    }
-
-    // Dynamically attach listeners when any element gets focus
-    handleFocusIn(e) {
-      const el = e.target;
-      if (!el || el.dataset.shortcutListener) return;
-
-      // Check if this element is editable
-      const isEditable = (
-        el.tagName === 'INPUT' ||
-        el.tagName === 'TEXTAREA' ||
-        el.isContentEditable ||
-        el.getAttribute('contenteditable') !== null ||
-        el.getAttribute('role') === 'textbox' ||
-        el.getAttribute('role') === 'combobox' ||
-        el.getAttribute('role') === 'searchbox'
-      );
-
-      if (isEditable) {
-        el.addEventListener('input', this.handleInput.bind(this));
-        el.addEventListener('keydown', this.handleKeydown.bind(this));
-        el.addEventListener('compositionend', this.handleInput.bind(this));
-        el.dataset.shortcutListener = 'true';
-      }
     }
 
     handleInput(e) {
@@ -337,7 +193,7 @@
               hasCount: true,
               fullText: ''
             };
-            this.showPreview(target, shortcutKey, count, '<span style="color:#ff4444;font-weight:bold;font-size:14px;">⚠️ Error: Maximum 1000 words allowed!<br>You requested ' + count + ' words.</span>');
+            this.showPreview(target, shortcutKey, count, `⚠️ Error: Maximum 1000 words allowed!\nYou requested ${count} words.`);
             return;
           }
           const loremText = this.generateLoremIpsum(count);
@@ -570,16 +426,19 @@
       }
     }
 
-    // NEW: Proper function to split emojis correctly
+    // Proper function to split emojis correctly (including skin tones, ZWJ sequences, flags)
     splitEmojis(emojiString) {
       if (!emojiString) return [];
 
-      // This regex properly splits emojis including combined emojis and skin tone modifiers
-      const emojiRegex = /[\p{Emoji_Presentation}\p{Emoji}\p{Emoji_Modifier}]/gu;
-      const emojis = emojiString.match(emojiRegex) || [];
+      // Modern grapheme segmentation preserves composite emojis, modifiers, and flags
+      if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+        const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+        return Array.from(segmenter.segment(emojiString), s => s.segment.trim()).filter(Boolean);
+      }
 
-      // Filter out any whitespace or empty strings
-      return emojis.filter(emoji => emoji.trim() !== '');
+      // Fallback regex
+      const emojiRegex = /\p{Extended_Pictographic}/gu;
+      return (emojiString.match(emojiRegex) || []).filter(emoji => emoji.trim() !== '');
     }
 
     // NEW: Function to get random emojis
@@ -651,8 +510,12 @@
 
       // Preview text
       const textDiv = document.createElement('div');
-      textDiv.style.cssText = 'margin-bottom: 8px !important; word-break: break-word !important;';
-      textDiv.innerHTML = previewText;
+      textDiv.style.cssText = 'margin-bottom: 8px !important; word-break: break-word !important; white-space: pre-wrap !important;';
+      if (typeof previewText === 'string' && previewText.startsWith('⚠️ Error:')) {
+        textDiv.style.color = '#ff4444';
+        textDiv.style.fontWeight = 'bold';
+      }
+      textDiv.textContent = previewText;
 
       // Footer with hint + copy button
       const footerDiv = document.createElement('div');
@@ -716,137 +579,6 @@
       inputElement.focus();
     }
 
-    ensureShadowDom() {
-      if (this.shadowHost) return;
-      if (!document.body) return; // No body in this frame
-
-      try {
-        // Create host element
-        this.shadowHost = document.createElement('div');
-        this.shadowHost.id = 'shortcut-helper-host';
-        // Reset all styles on host to prevent inheritance
-        this.shadowHost.style.all = 'initial';
-        this.shadowHost.style.position = 'absolute';
-        this.shadowHost.style.top = '0';
-        this.shadowHost.style.left = '0';
-        this.shadowHost.style.zIndex = '9999999999';
-        this.shadowHost.style.pointerEvents = 'none';
-
-        document.body.appendChild(this.shadowHost);
-
-        // Create shadow root
-        this.shadowRoot = this.shadowHost.attachShadow({ mode: 'open' });
-      } catch (e) {
-        // Shadow DOM creation failed (e.g., restricted frame)
-        this.shadowHost = null;
-      }
-    }
-
-    // Add improved styles with inline button
-    addImprovedStyles() {
-      // Check if styles already exist in shadow root
-      if (this.shadowRoot.getElementById('shortcut-improved-styles')) return;
-
-      const style = document.createElement('style');
-      style.id = 'shortcut-improved-styles';
-      style.textContent = `
-      :host {
-        all: initial;
-        font-family: sans-serif;
-      }
-
-      .shortcut-preview {
-        background: #ffffff;
-        color: #1e293b;
-        padding: 16px;
-        border-radius: 16px;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-        font-family: 'Outfit', -apple-system, sans-serif;
-        font-size: 14px;
-        cursor: pointer;
-        border: 1px solid #e2e8f0;
-        animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        max-width: 340px;
-        pointer-events: auto; /* Re-enable pointer events for the popup */
-        box-sizing: border-box;
-      }
-      
-      .shortcut-preview:hover {
-        transform: translateY(-2px);
-        border-color: #6366f1;
-      }
-      
-      @keyframes slideIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      
-      .preview-content {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      
-      .preview-text {
-        font-size: 14px;
-        line-height: 1.5;
-        max-height: 120px;
-        overflow-y: auto;
-        padding: 12px;
-        background: #f8fafc;
-        border-radius: 10px;
-        border: 1px solid #f1f5f9;
-        color: #334155;
-        box-sizing: border-box;
-      }
-      
-      .preview-footer {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
-      
-      .preview-hint {
-        font-size: 12px;
-        color: #64748b;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-weight: 500;
-      }
-      
-      .preview-hint kbd {
-        background: #f1f5f9;
-        padding: 2px 6px;
-        border-radius: 6px;
-        border: 1px solid #e2e8f0;
-        font-family: monospace;
-        font-weight: 700;
-        color: #4f46e5;
-      }
-      
-      .copy-btn {
-        background: #4f46e5;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 6px 12px;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-      
-      .copy-btn:hover {
-        background: #3730a3;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2);
-      }
-    `;
-
-      this.shadowRoot.appendChild(style);
-    }
-
     // Copy text to clipboard
     async copyToClipboard(text) {
       try {
@@ -861,8 +593,7 @@
 
         // Revert after 1.5 seconds
         setTimeout(() => {
-          // Check if element still exists in shadow DOM
-          if (copyBtn && this.previewElement && this.shadowRoot.contains(this.previewElement)) {
+          if (copyBtn && this.previewElement && document.body.contains(this.previewElement)) {
             copyBtn.innerHTML = originalHTML;
             copyBtn.style.background = '';
             copyBtn.style.borderColor = '';
@@ -873,14 +604,14 @@
         console.error('Failed to copy:', error);
 
         // Show error feedback
-        const copyBtn = this.previewElement.querySelector('.copy-btn');
+        const copyBtn = this.previewElement?.querySelector('.copy-btn');
         if (copyBtn) {
           copyBtn.innerHTML = '❌ Error';
           copyBtn.style.background = 'rgba(239, 68, 68, 0.3)';
           copyBtn.style.borderColor = 'rgba(239, 68, 68, 0.6)';
 
           setTimeout(() => {
-            if (copyBtn && this.previewElement && this.shadowRoot.contains(this.previewElement)) {
+            if (copyBtn && this.previewElement && document.body.contains(this.previewElement)) {
               copyBtn.innerHTML = '📋 Copy';
               copyBtn.style.background = '';
               copyBtn.style.borderColor = '';
@@ -987,29 +718,62 @@
           finalText +
           currentValue.substring(startIndex + shortcutPattern.length);
 
-        this.setValue(target, newValue);
-
-        // Set cursor position after inserted text
-        const newCursorPos = startIndex + finalText.length;
-        this.setCaretPosition(target, newCursorPos);
-
-        // Dispatch input event to trigger any website listeners
-        const inputEvent = new Event('input', { bubbles: true, composed: true });
-        target.dispatchEvent(inputEvent);
-
-        // Dispatch change event for form inputs
-        const changeEvent = new Event('change', { bubbles: true, composed: true });
-        target.dispatchEvent(changeEvent);
+        this.applyReplacement(target, newValue, startIndex, shortcutPattern, finalText);
       }
 
       this.removePreview();
     }
 
+    // Apply replacement with framework compatibility (React, Vue) and undo stack preservation
+    applyReplacement(element, newValue, startIndex, shortcutPattern, finalText) {
+      if (element.isContentEditable) {
+        element.focus();
+        const end = startIndex + shortcutPattern.length;
+        const selected = this.setSelectionRangeOnElement(element, startIndex, end);
+        
+        let replaced = false;
+        if (selected) {
+          try {
+            // execCommand preserves browser Undo (Ctrl+Z) and rich-text structure
+            replaced = document.execCommand('insertText', false, finalText);
+          } catch (e) {
+            replaced = false;
+          }
+        }
+
+        if (!replaced) {
+          this.setValue(element, newValue);
+          this.setCaretPosition(element, startIndex + finalText.length);
+        }
+
+        element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText' }));
+      } else {
+        // For regular inputs (React, Vue, Angular, Svelte)
+        const prototype = element instanceof HTMLTextAreaElement ? 
+          window.HTMLTextAreaElement.prototype : 
+          window.HTMLInputElement.prototype;
+
+        const nativeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+
+        if (nativeValueSetter) {
+          nativeValueSetter.call(element, newValue);
+        } else {
+          element.value = newValue;
+        }
+
+        // Set cursor position after inserted text
+        const newCursorPos = startIndex + finalText.length;
+        element.setSelectionRange(newCursorPos, newCursorPos);
+
+        element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText' }));
+        element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        element.focus();
+      }
+    }
+
     // Helper methods for different input types
     getValue(element) {
       if (element.isContentEditable) {
-        // For contenteditable, trim trailing whitespace/newlines
-        // (Google Sheets, Docs etc. add trailing \n to innerText)
         return (element.innerText || element.textContent || '').trim();
       }
       return element.value || '';
@@ -1017,37 +781,74 @@
 
     setValue(element, value) {
       if (element.isContentEditable) {
-        // For contenteditable, preserve cursor and formatting
         const selection = window.getSelection();
         const range = document.createRange();
 
-        // Set the text content
         element.textContent = value;
 
-        // Try to restore cursor position at the end
         range.selectNodeContents(element);
-        range.collapse(false); // Collapse to end
+        range.collapse(false);
         selection.removeAllRanges();
         selection.addRange(range);
 
-        // Trigger input event
-        const event = new InputEvent('input', {
+        element.dispatchEvent(new InputEvent('input', {
           bubbles: true,
           composed: true,
           inputType: 'insertText'
-        });
-        element.dispatchEvent(event);
+        }));
       } else {
-        // For regular inputs
-        element.value = value;
+        const prototype = element instanceof HTMLTextAreaElement ? 
+          window.HTMLTextAreaElement.prototype : 
+          window.HTMLInputElement.prototype;
 
-        // Trigger events
-        element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        const nativeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+        if (nativeValueSetter) {
+          nativeValueSetter.call(element, value);
+        } else {
+          element.value = value;
+        }
+
+        element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText' }));
         element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
       }
 
-      // Focus the element
       element.focus();
+    }
+
+    setSelectionRangeOnElement(element, start, end) {
+      try {
+        const selection = window.getSelection();
+        let charCount = 0;
+        let node;
+        const range = document.createRange();
+        let startSet = false;
+
+        const treeWalker = document.createTreeWalker(
+          element,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        );
+
+        while ((node = treeWalker.nextNode())) {
+          const nextCharCount = charCount + node.length;
+          if (!startSet && start <= nextCharCount) {
+            range.setStart(node, start - charCount);
+            startSet = true;
+          }
+          if (end <= nextCharCount) {
+            range.setEnd(node, end - charCount);
+            break;
+          }
+          charCount = nextCharCount;
+        }
+
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
 
     getCaretPosition(element) {

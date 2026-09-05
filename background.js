@@ -47,52 +47,48 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-// Auto-sync when shortcuts change
+let isSyncing = false;
+let syncDebounceTimer = null;
+
+// Auto-sync when shortcuts change (authoritative debounced push of local changes)
 chrome.storage.onChanged.addListener(async (changes, namespace) => {
   if (namespace === 'local' && changes.shortcuts) {
     const syncSettings = await chrome.storage.local.get('syncSettings');
     const settings = syncSettings.syncSettings || {};
 
     if (settings.enabled && settings.autoSync) {
-      // Wait 2 seconds to batch changes
-      setTimeout(async () => {
+      if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+
+      syncDebounceTimer = setTimeout(async () => {
+        syncDebounceTimer = null;
+        if (isSyncing) return;
+
+        isSyncing = true;
         try {
           const result = await chrome.storage.local.get(['shortcuts']);
           const localShortcuts = result.shortcuts || {};
 
-          // Now GitHubSync is globally available via importScripts
           const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
+          const pushResult = await githubSync.push(localShortcuts);
 
-          // Use sync() for proper merge (instead of direct push)
-          const syncResult = await githubSync.sync(localShortcuts);
-
-          if (syncResult.success) {
-            console.log('Auto-sync completed:', syncResult.action);
-
-            // Update local storage if GitHub had newer data
-            if (syncResult.action === 'synced' || syncResult.action === 'no_changes') {
-              const currentResult = await chrome.storage.local.get(['shortcuts']);
-              const currentShortcuts = currentResult.shortcuts || {};
-
-              // Only update if data changed
-              if (JSON.stringify(currentShortcuts) !== JSON.stringify(syncResult.data)) {
-                await chrome.storage.local.set({ shortcuts: syncResult.data });
-              }
-            }
+          if (pushResult.success) {
+            settings.lastSync = new Date().toISOString();
+            await chrome.storage.local.set({ syncSettings: settings });
+            console.log('Auto-sync push completed successfully');
           } else {
-            console.error('Auto-sync failed:', syncResult.error);
+            console.error('Auto-sync push failed:', pushResult.error);
           }
         } catch (error) {
           console.error('Auto-sync error:', error);
+        } finally {
+          isSyncing = false;
         }
       }, 2000);
     }
   }
 });
 
-
-
-// Check if sync is needed and perform it
+// Check if sync is needed and perform it (scheduled alarm)
 async function checkAndSync() {
   const result = await chrome.storage.local.get(['syncSettings']);
   const settings = result.syncSettings || {};
@@ -102,32 +98,39 @@ async function checkAndSync() {
   }
 }
 
-// Perform the actual sync operation
+// Perform the bidirectional sync operation with concurrency lock
 async function performSync(settings) {
+  if (isSyncing) {
+    console.log('Sync already in progress, skipping concurrent request');
+    return { success: false, error: 'Sync already in progress' };
+  }
+
+  isSyncing = true;
   try {
     const localResult = await chrome.storage.local.get(['shortcuts']);
     const localShortcuts = localResult.shortcuts || {};
 
-    // Now GitHubSync is globally available via importScripts
     const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
 
     // Test connection first
     const connection = await githubSync.testConnection();
     if (!connection.success) {
       console.error('GitHub sync connection failed:', connection.error);
-      return;
+      return { success: false, error: connection.error };
     }
 
-    // Perform sync
+    // Perform bidirectional merge sync
     const syncResult = await githubSync.sync(localShortcuts);
 
     if (syncResult.success) {
-      const currentResult = await chrome.storage.local.get(['shortcuts']);
-      const currentShortcuts = currentResult.shortcuts || {};
+      if (syncResult.action === 'synced' || syncResult.action === 'no_changes') {
+        const currentResult = await chrome.storage.local.get(['shortcuts']);
+        const currentShortcuts = currentResult.shortcuts || {};
 
-      // Only update if data changed
-      if (JSON.stringify(currentShortcuts) !== JSON.stringify(syncResult.data)) {
-        await chrome.storage.local.set({ shortcuts: syncResult.data });
+        // Only update if data changed
+        if (JSON.stringify(currentShortcuts) !== JSON.stringify(syncResult.data)) {
+          await chrome.storage.local.set({ shortcuts: syncResult.data });
+        }
       }
 
       // Update last sync time
@@ -135,89 +138,31 @@ async function performSync(settings) {
       await chrome.storage.local.set({ syncSettings: settings });
 
       console.log('Sync completed:', syncResult.action);
+      return { success: true, action: syncResult.action, message: syncResult.message };
     } else {
       console.error('Sync failed:', syncResult.error);
+      return { success: false, error: syncResult.error };
     }
   } catch (error) {
     console.error('Sync error:', error);
+    return { success: false, error: error.message };
+  } finally {
+    isSyncing = false;
   }
 }
 
-
-
-// Listen for messages from popup or content scripts
+// Unified message listener for popup interactions
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'getShortcuts') {
-    chrome.storage.local.get('shortcuts', (result) => {
-      sendResponse({ shortcuts: result.shortcuts || {} });
-    });
-    return true; // Will respond asynchronously
-  }
-
   if (request.action === 'syncNow') {
-    // Trigger immediate sync
     chrome.storage.local.get(['syncSettings'], async (result) => {
       const settings = result.syncSettings || {};
       if (settings.enabled) {
-        await performSync(settings);
-        sendResponse({ success: true });
+        const syncResponse = await performSync(settings);
+        sendResponse(syncResponse);
       } else {
         sendResponse({ success: false, error: 'GitHub sync not enabled' });
       }
     });
-    return true;
-  }
-
-  if (request.action === 'getSyncStatus') {
-    chrome.storage.local.get(['syncSettings'], (result) => {
-      sendResponse({ settings: result.syncSettings || {} });
-    });
-    return true;
-  }
-
-  // 🔥 NEW: Get GitHub file info
-  if (request.action === 'getGitHubInfo') {
-    chrome.storage.local.get(['syncSettings'], async (result) => {
-      const settings = result.syncSettings || {};
-      if (settings.enabled && settings.token && settings.repoUrl) {
-        try {
-          // GitHubSync is globally available
-          const githubSync = new GitHubSync(settings.token, settings.repoUrl, settings.userEmail);
-          const fileInfo = await githubSync.getFileInfo();
-          sendResponse({ success: true, info: fileInfo });
-        } catch (error) {
-          sendResponse({ success: false, error: error.message });
-        }
-      } else {
-        sendResponse({ success: false, error: 'GitHub not connected' });
-      }
-    });
-    return true;
+    return true; // Asynchronous response
   }
 });
-
-// ===== PROGRAMMATIC INJECTION =====
-// Re-inject content.js into ALL frames when a tab finishes loading.
-// This is a failsafe for complex apps (Google Sheets, Office Online)
-// where declarative content_scripts injection may not reach all frames.
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
-    injectContentScript(tabId);
-  }
-});
-
-// Also inject when user switches tabs (in case the page loaded before extension was ready)
-chrome.tabs.onActivated.addListener((activeInfo) => {
-  injectContentScript(activeInfo.tabId);
-});
-
-async function injectContentScript(tabId) {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tabId, allFrames: true },
-      files: ['content.js']
-    });
-  } catch (e) {
-    // Silently fail for restricted pages (chrome://, edge://, etc.)
-  }
-}

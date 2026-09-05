@@ -124,13 +124,36 @@ parseRepoUrl(url) {
     }
   }
 
+  // Helper: Encode Unicode string to Base64 safely
+  stringToBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    const binString = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+    return btoa(binString);
+  }
+
+  // Helper: Decode Base64 string to Unicode safely
+  base64ToString(base64) {
+    const cleanBase64 = base64.replace(/\s/g, '');
+    const binString = atob(cleanBase64);
+    const bytes = Uint8Array.from(binString, (m) => m.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
   // PUSH function - DIRECT to file
   async push(shortcuts, sha = null) {
     try {
+      // If SHA wasn't supplied, check if file exists on GitHub to avoid 422 Unprocessable Entity
+      if (!sha) {
+        const current = await this.pull();
+        if (current.success && current.exists && current.sha) {
+          sha = current.sha;
+        }
+      }
+
       const url = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${this.basePath}`;
       
       const jsonString = JSON.stringify(shortcuts, null, 2);
-      const contentBase64 = btoa(unescape(encodeURIComponent(jsonString)));
+      const contentBase64 = this.stringToBase64(jsonString);
       
       const payload = {
         message: `Shortcuts update for ${this.userEmail || 'default'} - ${new Date().toLocaleString()}`,
@@ -145,6 +168,28 @@ parseRepoUrl(url) {
       });
       
       if (!response.ok) {
+        // Automatic 409 Conflict retry with fresh SHA
+        if (response.status === 409) {
+          const fresh = await this.pull();
+          if (fresh.success && fresh.sha) {
+            payload.sha = fresh.sha;
+            const retryRes = await fetch(url, {
+              method: 'PUT',
+              headers: this.headers,
+              body: JSON.stringify(payload)
+            });
+            if (retryRes.ok) {
+              const retryResult = await retryRes.json();
+              return {
+                success: true,
+                sha: retryResult.content.sha,
+                filePath: this.basePath,
+                userEmail: this.userEmail
+              };
+            }
+          }
+        }
+
         const errorText = await response.text();
         let errorMessage = `GitHub error: ${response.status}`;
         
@@ -194,7 +239,7 @@ parseRepoUrl(url) {
       
       const result = await response.json();
       
-      const jsonString = decodeURIComponent(escape(atob(result.content)));
+      const jsonString = this.base64ToString(result.content);
       const shortcuts = JSON.parse(jsonString);
       
       return { 

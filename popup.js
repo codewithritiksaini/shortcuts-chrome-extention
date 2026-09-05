@@ -14,6 +14,7 @@ document.getElementById('saveSync').addEventListener('click', saveGitHubSettings
 // GitHub Sync State
 let githubSync = null;
 let syncSettings = null;
+let editingKey = null;
 
 // Load shortcuts and sync settings
 async function loadShortcuts() {
@@ -100,7 +101,7 @@ async function loadShortcutsList() {
     // Display emojis as badges
     let emojisHtml = '';
     if (shortcut.emojis) {
-      const emojis = (shortcut.emojis.match(/[\p{Emoji_Presentation}\p{Emoji}\p{Emoji_Modifier}]/gu) || []);
+      const emojis = splitEmojis(shortcut.emojis);
       emojisHtml = `
         <div class="shortcut-emojis">
           ${emojis.slice(0, 5).map(e => `<span class="emoji-badge">${e}</span>`).join('')}
@@ -242,14 +243,13 @@ async function saveGitHubSettings() {
   }
 }
 
-// Sync button - Pull from GitHub + Push local changes
+// Sync button - Trigger background synchronization
 async function syncWithGitHub() {
-  if (!githubSync) {
+  if (!syncSettings?.enabled) {
     showStatus('Not connected to GitHub', 'error');
     return;
   }
 
-  // Update UI to show syncing
   const statusDot = document.getElementById('syncStatusDot');
   const statusText = document.getElementById('syncStatusText');
   const syncBtn = document.getElementById('syncNowBtn');
@@ -259,63 +259,23 @@ async function syncWithGitHub() {
   syncBtn.disabled = true;
   syncBtn.innerHTML = '⏳ Syncing...';
 
-  try {
-    // 1. Get local shortcuts
-    const localResult = await chrome.storage.local.get('shortcuts');
-    const localShortcuts = localResult.shortcuts || {};
-
-    // 2. Get GitHub shortcuts
-    const pullResult = await githubSync.pull();
-
-    if (!pullResult.success) {
-      throw new Error(`Failed to pull from GitHub: ${pullResult.error}`);
+  chrome.runtime.sendMessage({ action: 'syncNow' }, async (response) => {
+    if (response && response.success) {
+      statusDot.className = 'sync-dot on';
+      statusText.textContent = `Synced ${new Date().toLocaleTimeString()}`;
+      showStatus(response.message || '✅ Sync complete!', 'success');
+      await loadShortcuts();
+    } else {
+      statusDot.className = 'sync-dot on';
+      statusText.textContent = 'Sync failed';
+      showStatus(`❌ Sync failed: ${response?.error || 'Unknown error'}`, 'error');
     }
-
-    let githubShortcuts = pullResult.data;
-    let sha = pullResult.sha;
-
-    // 3. MERGE STRATEGY: GitHub + Local (GitHub data as base, overwrite with local)
-    const merged = { ...githubShortcuts, ...localShortcuts };
-
-    // 4. Push merged data to GitHub
-    const pushResult = await githubSync.push(merged, sha);
-
-    if (!pushResult.success) {
-      throw new Error(`Failed to push to GitHub: ${pushResult.error}`);
-    }
-
-    // 5. Save merged data locally (so we have everything)
-    await chrome.storage.local.set({ shortcuts: merged });
-
-    // 6. Update sync settings
-    syncSettings.lastSync = new Date().toISOString();
-    await chrome.storage.local.set({ syncSettings });
-
-    // Update UI
-    statusDot.className = 'status-dot connected';
-    statusText.textContent = `Synced ${new Date().toLocaleTimeString()}`;
-
-    // Show success message with details
-    const added = Object.keys(localShortcuts).length;
-    const pulled = Object.keys(githubShortcuts).length;
-    const mergedCount = Object.keys(merged).length;
-
-    showStatus(`✅ Sync complete! Local: ${added}, GitHub: ${pulled}, Merged: ${mergedCount}`, 'success');
-
-    // Reload shortcuts list
-    await loadShortcutsList();
-  } catch (error) {
-    statusDot.className = 'status-dot connected';
-    statusText.textContent = 'Sync failed';
-    showStatus(`❌ Sync failed: ${error.message}`, 'error');
-  } finally {
-    // Restore sync button
     syncBtn.disabled = false;
     syncBtn.innerHTML = '🔄 Sync Now';
-  }
+  });
 }
 
-// Save shortcut with auto-sync to GitHub
+// Save shortcut with background auto-sync
 async function saveShortcut() {
   const shortcutInput = document.getElementById('shortcut').value.trim();
   const textInput = document.getElementById('text').value.trim();
@@ -345,62 +305,24 @@ async function saveShortcut() {
   const result = await chrome.storage.local.get('shortcuts');
   const shortcuts = result.shortcuts || {};
 
-  // Check if updating existing or creating new
-  const isUpdate = shortcuts.hasOwnProperty(shortcutInput);
-
-  // Update/Add the shortcut
-  shortcuts[shortcutInput] = shortcut;
-
-  // Save locally
-  await chrome.storage.local.set({ shortcuts });
-
-  // 🔥 DEBUG: Console log for troubleshooting
-  console.log('🔄 Auto-sync attempt:', {
-    githubSyncExists: !!githubSync,
-    syncSettingsEnabled: syncSettings?.enabled,
-    shortcutKey: shortcutInput,
-    isUpdate: isUpdate
-  });
-
-  // AUTO-SYNC TO GITHUB (if connected)
-  if (githubSync && syncSettings?.enabled) {
-    try {
-      console.log('📤 Attempting GitHub push...');
-
-      // Pehle current state get karo GitHub se
-      const pullResult = await githubSync.pull();
-      console.log('📥 Pull result:', pullResult);
-
-      if (pullResult.success) {
-        // Merge: GitHub data + our new shortcut
-        const updatedShortcuts = { ...pullResult.data, [shortcutInput]: shortcut };
-
-        // Push merged data
-        const pushResult = await githubSync.push(updatedShortcuts, pullResult.sha);
-        console.log('📤 Push result:', pushResult);
-
-        if (pushResult.success) {
-          syncSettings.lastSync = new Date().toISOString();
-          await chrome.storage.local.set({ syncSettings });
-          showStatus(`✅ "${shortcutInput}" ${isUpdate ? 'updated' : 'created'} and synced with GitHub`, 'success');
-        } else {
-          console.error('❌ Push failed:', pushResult);
-          showStatus(`✅ "${shortcutInput}" ${isUpdate ? 'updated' : 'created'} locally (GitHub: ${pushResult.error})`, 'error');
-        }
-      } else {
-        console.error('❌ Pull failed:', pullResult);
-        showStatus(`✅ "${shortcutInput}" ${isUpdate ? 'updated' : 'created'} locally (GitHub pull failed)`, 'error');
-      }
-    } catch (error) {
-      console.error('💥 Auto-sync error:', error);
-      showStatus(`✅ "${shortcutInput}" ${isUpdate ? 'updated' : 'created'} locally (GitHub error)`, 'error');
-    }
-  } else {
-    console.log('ℹ️ GitHub sync not enabled');
-    showStatus(`✅ "${shortcutInput}" ${isUpdate ? 'updated' : 'created'} successfully`, 'success');
+  // If renaming an existing shortcut, delete the old trigger key
+  if (editingKey && editingKey !== shortcutInput) {
+    delete shortcuts[editingKey];
   }
 
-  // Clear form
+  const isUpdate = shortcuts.hasOwnProperty(shortcutInput) || !!editingKey;
+  shortcuts[shortcutInput] = shortcut;
+
+  // Save locally — background service worker automatically auto-syncs with debouncing
+  await chrome.storage.local.set({ shortcuts });
+
+  showStatus(`✅ "${shortcutInput}" ${isUpdate ? 'updated' : 'created'} successfully`, 'success');
+
+  // Reset editing state and form
+  editingKey = null;
+  const saveBtn = document.getElementById('saveBtn');
+  if (saveBtn) saveBtn.innerHTML = '<span>✨</span> Save';
+
   document.getElementById('shortcut').value = '';
   document.getElementById('text').value = '';
   document.getElementById('emojis').value = '';
@@ -409,90 +331,31 @@ async function saveShortcut() {
   await loadShortcutsList();
 }
 
-async function deleteShortcut(key, deleteFromGitHub = false) {
-  console.log('🗑️ DELETE START:', { key, deleteFromGitHub });
-
-  // Get current shortcuts
+async function deleteShortcut(key) {
   const result = await chrome.storage.local.get('shortcuts');
   let shortcuts = result.shortcuts || {};
 
-  console.log('📊 Before delete - Total shortcuts:', Object.keys(shortcuts).length);
-  console.log('🔍 Shortcut to delete exists?', shortcuts.hasOwnProperty(key));
-
-  // Check if shortcut exists
   if (!shortcuts[key]) {
     showStatus(`Shortcut "${key}" not found`, 'error');
     return;
   }
 
-  // Store the deleted shortcut data (for debugging)
-  const deletedShortcut = shortcuts[key];
-
-  // Delete from local
   delete shortcuts[key];
 
-  console.log('📊 After delete - Total shortcuts:', Object.keys(shortcuts).length);
-
-  // Save locally
+  // Save locally — background pushes updated shortcuts to GitHub automatically
   await chrome.storage.local.set({ shortcuts });
-  console.log('✅ Saved locally');
 
-  // GITHUB DELETE (if checkbox checked)
-  if (githubSync && syncSettings?.enabled && deleteFromGitHub) {
-    console.log('🔄 Attempting GitHub delete...');
-
-    try {
-      // METHOD 1: First get current GitHub state
-      console.log('📥 Pulling from GitHub...');
-      const pullResult = await githubSync.pull();
-      console.log('📥 Pull result:', {
-        success: pullResult.success,
-        exists: pullResult.exists,
-        dataCount: pullResult.exists ? Object.keys(pullResult.data).length : 0,
-        sha: pullResult.sha ? 'SHA exists' : 'No SHA'
-      });
-
-      if (pullResult.success && pullResult.exists) {
-        // Create updated data without the deleted key
-        const githubShortcuts = pullResult.data;
-        console.log('🔍 Key exists on GitHub?', githubShortcuts.hasOwnProperty(key));
-
-        // Delete from GitHub data
-        delete githubShortcuts[key];
-
-        console.log('📤 Pushing updated data to GitHub...');
-        const pushResult = await githubSync.push(githubShortcuts, pullResult.sha);
-        console.log('📤 Push result:', pushResult);
-
-        if (pushResult.success) {
-          syncSettings.lastSync = new Date().toISOString();
-          await chrome.storage.local.set({ syncSettings });
-          console.log('✅ GitHub delete successful');
-          showStatus(`✅ "${key}" deleted from local and GitHub`, 'success');
-        } else {
-          console.error('❌ GitHub push failed:', pushResult.error);
-          showStatus(`✅ "${key}" deleted locally (GitHub: ${pushResult.error})`, 'error');
-        }
-      } else if (pullResult.success && !pullResult.exists) {
-        // File doesn't exist on GitHub
-        console.log('ℹ️ File not on GitHub, only local delete');
-        showStatus(`✅ "${key}" deleted locally`, 'success');
-      } else {
-        // Pull failed
-        console.error('❌ GitHub pull failed:', pullResult.error);
-        showStatus(`✅ "${key}" deleted locally (GitHub pull failed)`, 'error');
-      }
-    } catch (error) {
-      console.error('💥 GitHub delete error:', error);
-      showStatus(`✅ "${key}" deleted locally (GitHub error)`, 'error');
-    }
-  } else {
-    // GitHub not connected or checkbox not checked
-    console.log('ℹ️ GitHub delete not requested');
-    showStatus(`✅ "${key}" deleted locally`, 'success');
+  // If we were editing this shortcut, reset the edit state
+  if (editingKey === key) {
+    editingKey = null;
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn) saveBtn.innerHTML = '<span>✨</span> Save';
+    document.getElementById('shortcut').value = '';
+    document.getElementById('text').value = '';
+    document.getElementById('emojis').value = '';
   }
 
-  // Reload shortcuts list
+  showStatus(`✅ "${key}" deleted`, 'success');
   loadShortcutsList();
 }
 
@@ -503,19 +366,19 @@ async function editShortcut(key) {
   const shortcut = shortcuts[key];
 
   if (shortcut) {
-    // Fill form with existing values
+    editingKey = key;
     document.getElementById('shortcut').value = key;
     document.getElementById('text').value = shortcut.text;
     document.getElementById('emojis').value = shortcut.emojis || '';
 
-    // Scroll to form
-    document.getElementById('shortcut').focus();
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn) saveBtn.innerHTML = '<span>💾</span> Update';
 
+    document.getElementById('shortcut').focus();
     showStatus(`Editing "${key}" - Update and save`, 'success');
   }
 }
 
-// Delete confirmation modal
 // Delete confirmation modal
 function showDeleteConfirmation(key) {
   const overlay = document.createElement('div');
@@ -529,16 +392,6 @@ function showDeleteConfirmation(key) {
     </div>
     <div class="form-group">
       <p class="form-label" style="font-weight: 500;">Are you sure you want to delete <strong>${key}</strong>?</p>
-      
-      ${githubSync && syncSettings.enabled ? `
-      <div style="margin-top: 16px;">
-        <label class="checkbox-container">
-          <input type="checkbox" id="deleteFromGitHub">
-          <span class="checkbox-custom"></span>
-          <span class="form-label" style="margin: 0;">Also delete from GitHub</span>
-        </label>
-      </div>
-      ` : ''}
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary modal-btn-cancel">Cancel</button>
@@ -553,10 +406,7 @@ function showDeleteConfirmation(key) {
 
   modal.querySelector('.modal-btn-confirm').addEventListener('click', async (e) => {
     const keyToDelete = e.target.dataset.key;
-    const deleteFromGitHub = modal.querySelector('#deleteFromGitHub') ?
-      modal.querySelector('#deleteFromGitHub').checked : false;
-
-    await deleteShortcut(keyToDelete, deleteFromGitHub);
+    await deleteShortcut(keyToDelete);
     overlay.remove();
   });
 }
@@ -614,15 +464,22 @@ async function clearAllShortcuts() {
 
     if (syncSettings.enabled && clearFromGitHub && githubSync) {
       try {
-        await githubSync.push({});
-        syncSettings.lastSync = new Date().toISOString();
-        await chrome.storage.local.set({ syncSettings });
+        const pushResult = await githubSync.push({});
+        if (pushResult.success) {
+          syncSettings.lastSync = new Date().toISOString();
+          await chrome.storage.local.set({ syncSettings });
+          showStatus('All shortcuts cleared locally and on GitHub', 'success');
+        } else {
+          showStatus(`All shortcuts cleared locally (GitHub: ${pushResult.error})`, 'error');
+        }
       } catch (error) {
         console.error('GitHub clear failed:', error);
+        showStatus('All shortcuts cleared locally (GitHub clear failed)', 'error');
       }
+    } else {
+      showStatus('All shortcuts cleared', 'success');
     }
 
-    showStatus('All shortcuts cleared', 'success');
     overlay.remove();
     loadShortcutsList();
   });
@@ -642,4 +499,15 @@ function showStatus(message, type) {
       status.style.opacity = '1';
     }, 300);
   }, 4000);
+}
+
+// Split emojis preserving grapheme clusters (flags, skin tones, ZWJ sequences)
+function splitEmojis(emojiString) {
+  if (!emojiString) return [];
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    return Array.from(segmenter.segment(emojiString), s => s.segment.trim()).filter(Boolean);
+  }
+  const emojiRegex = /\p{Extended_Pictographic}/gu;
+  return (emojiString.match(emojiRegex) || []).filter(e => e.trim() !== '');
 }
